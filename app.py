@@ -5,127 +5,95 @@ import threading
 import streamlit as st
 import telebot
 
-# 1. Отключаем проблемный трекер OpenTelemetry
-os.environ["OTEL_SDK_DISABLED"] = "true"
-
-from crewai import Agent, Task, Crew, LLM
-
 st.set_page_config(page_title="24/7 AI Telegram Bot", page_icon="🤖")
-st.title("🤖 Автономный Рой Агентов")
-st.write("Бот настроен на круглосуточную работу через Секреты Streamlit.")
+st.title("🤖 Легкий Автономный Рой Агентов")
+st.write("Бот переведен на ультра-легкие прямые запросы для обхода лимитов IP.")
 
-# 2. Безопасное чтение данных из Secrets
+# 1. Чтение токенов из Secrets
 TG_TOKEN = st.secrets.get("TG_TOKEN", "7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI")
 TG_CHAT_ID = st.secrets.get("TG_CHAT_ID", "6028985531")
 RAW_KEYS = st.secrets.get("AI_KEYS", "")
 
-# 3. Функция-колбэк (для логов в консоли сервера)
-def console_callback(step_output):
-    print(f"[AGENT STEP]: {str(step_output)[:100]}...")
+# Получаем список чистых ключей
+API_KEYS = [k.strip() for k in RAW_KEYS.split("\n") if k.strip()]
 
-# 4. Менеджер ротации РАЗНЫХ провайдеров
-class MultiProviderRotator:
-    def __init__(self, keys_string):
-        self.raw_keys = [k.strip() for k in keys_string.split("\n") if k.strip()]
-        self.pool = []
-        self.index = 0
-        
-        for key in self.raw_keys:
-            if key.startswith("AIzaSy"):
-                self.pool.append({"provider": "gemini", "model": "gemini/gemini-2.0-flash", "key": key})
-            elif key.startswith("gsk_"):
-                self.pool.append({"provider": "groq", "model": "groq/llama3-70b-8192", "key": key})
-            else:
-                self.pool.append({"provider": "gemini", "model": "gemini/gemini-2.0-flash", "key": key})
-                
-    def get_current(self):
-        if not self.pool:
-            return None
-        return self.pool[self.index]
+# 2. Функция прямого запроса к Gemini (без CrewAI)
+def ask_gemini_direct(prompt, api_key):
+    # Используем стабильный эндпоинт для gemini-2.0-flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+    payload = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
     
-    def rotate(self):
-        if len(self.pool) > 1:
-            self.index = (self.index + 1) % len(self.pool)
-            return True
-        return False
-
-# 5. Функция запуска Роя Агентов
-def start_agent_analysis():
-    rotator = MultiProviderRotator(RAW_KEYS)
-    if not rotator.pool:
-        return "❌ Ошибка: В Secrets не добавлены API-ключи нейросетей!"
-
-    max_attempts = 6
-    for attempt in range(max_attempts):
-        current_cfg = rotator.get_current()
-        
-        os.environ.pop("GEMINI_API_KEY", None)
-        os.environ.pop("GROQ_API_KEY", None)
-
-        if current_cfg["provider"] == "gemini":
-            os.environ["GEMINI_API_KEY"] = current_cfg["key"]
-        elif current_cfg["provider"] == "groq":
-            os.environ["GROQ_API_KEY"] = current_cfg["key"]
-
+    response = requests.post(url, json=payload, headers=headers)
+    
+    if response.status_code == 200:
         try:
-            custom_llm = LLM(
-                model=current_cfg["model"],
-                api_key=current_cfg["key"],
-                max_retries=1
-            )
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        except Exception:
+            return "ERROR_PARSE"
+    elif response.status_code == 429:
+        return "LIMIT_EXCEEDED"
+    else:
+        return "ERROR_UNKNOWN"
 
-            analyst = Agent(
-                role="Financial Market Analyst",
-                goal="Analyze cryptocurrency market trends and provide clear trading signals",
-                backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
-                llm=custom_llm,
-                verbose=True,
-                step_callback=console_callback
-            )
+# 3. Главный движок аналитики с ротацией
+def start_light_analysis():
+    if not API_KEYS:
+        return "❌ Ошибка: В Secrets не добавлены API-ключи нейросетей!"
+        
+    prompt_text = """Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
+    Учти: сейчас май 2026 года.
+    Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
+    Объясни своё решение в 3-4 предложениях.
+    Ответ должен быть полностью на РУССКОМ языке."""
 
-            task = Task(
-                description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
-                Учти: сейчас май 2026 года.
-                Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
-                Объясни своё решение в 3-4 предложениях.
-                ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
-                expected_output="Trading signal with justification in Russian language",
-                agent=analyst
-            )
+    # Проходим по кругу по всем твоим ключам
+    for index, key in enumerate(API_KEYS):
+        # Проверяем только ключи Gemini (начинаются на AIzaSy)
+        if not key.startswith("AIzaSy"):
+            continue
+            
+        print(f"Пробуем ключ Gemini №{index + 1}")
+        res = ask_gemini_direct(prompt_text, key)
+        
+        if res == "LIMIT_EXCEEDED":
+            print(f"Ключ №{index + 1} превысил лимит, берем следующий...")
+            time.sleep(1)
+            continue
+        elif res in ["ERROR_PARSE", "ERROR_UNKNOWN"]:
+            print(f"Сбой ключа №{index + 1}, пробуем дальше...")
+            continue
+        else:
+            # Если получили нормальный текст ответа — возвращаем его
+            return res
+            
+    return "🤖 К сожалению, абсолютно все бесплатные ключи и IP-адрес сервера сейчас заблокированы Google. Пожалуйста, повтори попытку через 5-10 минут, когда сбросятся квоты."
 
-            crew = Crew(agents=[analyst], tasks=[task], verbose=True)
-            return str(crew.kickoff())
-
-        except Exception as e:
-            if rotator.rotate():
-                time.sleep(2)
-                continue
-            else:
-                time.sleep(10)
-                continue
-                
-    return "🤖 Все шлюзы сейчас перегружены лимитами. Попробуй позже."
-
-# 6. Инициализация и запуск фонового Telegram-бота
+# 4. Фоновый Telegram-бот
 if "bot_loop_active" not in st.session_state:
     bot = telebot.TeleBot(TG_TOKEN)
 
     @bot.message_handler(commands=['start', 'help'])
     def send_welcome(message):
         if str(message.chat.id) == TG_CHAT_ID:
-            bot.reply_to(message, "👋 Привет! Я твой автономный ИИ-агент.\n\nНапиши мне **Анализ**, и я запущу проверку рынка!")
+            bot.reply_to(message, "👋 Привет! Я твой легкий автономный ИИ-агент.\n\nНапиши мне **Анализ**, и я запущу прямую проверку рынка!")
 
     @bot.message_handler(func=lambda message: True)
     def handle_all_messages(message):
         if str(message.chat.id) == TG_CHAT_ID:
             user_text = message.text.lower()
             if "анализ" in user_text or user_text == "/analyze":
-                bot.send_message(TG_CHAT_ID, "🚀 Запрос принят! Запускаю рой агентов в облаке. Пожалуйста, подожди (это может занять до 1-2 минут)...")
+                bot.send_message(TG_CHAT_ID, "🚀 Запрос принят! Делаю прямой запрос к ИИ в обход блокировок...")
                 
-                # Запуск анализа напрямую из сохраненных секретов
-                report = start_agent_analysis()
+                # Запуск легкого анализа
+                report = start_light_analysis()
                 
-                bot.send_message(TG_CHAT_ID, f"📊 *Результаты готовы:*\n\n{report}")
+                bot.send_message(TG_CHAT_ID, f"📊 *Результаты анализа Биткоина:*\n\n{report}")
             else:
                 bot.send_message(TG_CHAT_ID, "❓ Напиши слово **Анализ**, чтобы запустить процесс.")
 
@@ -141,4 +109,4 @@ if "bot_loop_active" not in st.session_state:
     t.start()
     st.session_state.bot_loop_active = True
 
-st.success("✅ Telegram-бот успешно запущен в фоновом потоке и готов к командам!")
+st.success("✅ Облегченный бот успешно запущен и ждет команд в Telegram!")
