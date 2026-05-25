@@ -18,8 +18,7 @@ st.subheader("Система динамического распределени
 if "agent_logs" not in st.session_state:
     st.session_state.agent_logs = ""
 
-# --- ЛОГИКА АВТОСОХРАНЕНИЯ ЧЕРЕЗ LOCAL STORAGE ЧЕРЕЗ СЕССИЮ STREAMLIT ---
-# Проверяем, есть ли сохраненные ключи в памяти сессии браузера, если нет — ставим пустые дефолты
+# Проверяем, есть ли сохраненные ключи в памяти сессии браузера
 if "saved_keys" not in st.session_state:
     st.session_state.saved_keys = ""
 if "saved_tg_token" not in st.session_state:
@@ -30,7 +29,6 @@ if "saved_tg_chat_id" not in st.session_state:
 # 3. Боковое меню
 st.sidebar.markdown("### 🔑 Пул ключей разных Нейросетей")
 
-# Поля ввода теперь привязаны к значениям из памяти
 keys_input = st.sidebar.text_area(
     "Вставь сюда свои ключи (Gemini, Groq), каждый с новой строки:", 
     height=150, 
@@ -41,12 +39,11 @@ keys_input = st.sidebar.text_area(
 tg_token = st.sidebar.text_input("Telegram Bot Token:", type="password", value=st.session_state.saved_tg_token)
 tg_chat_id = st.sidebar.text_input("Telegram Chat ID:", value=st.session_state.saved_tg_chat_id)
 
-# Кнопка сохранения данных, чтобы они не слетали при перезагрузке страницы в рамках сессии
 if st.sidebar.button("💾 Запомнить ключи в этой сессии", use_container_width=True):
     st.session_state.saved_keys = keys_input
     st.session_state.saved_tg_token = tg_token
     st.session_state.saved_tg_chat_id = tg_chat_id
-    st.sidebar.success("✅ Данные зафиксированы! Теперь при обновлении страницы они не сотрутся.")
+    st.sidebar.success("✅ Данные зафиксированы!")
 
 # Разделение экрана на две колонки
 col1, col2 = st.columns([1, 1])
@@ -120,13 +117,16 @@ if start_button:
     if not rotator.pool:
         st.error("❌ Сначала вставь хотя бы один API-ключ в боковое меню!")
     else:
-        current = rotator.get_current()
-
-        def run_crew_with_retry(max_attempts=6):
+        def run_crew_with_retry(max_attempts=8):
             for attempt in range(max_attempts):
                 current_cfg = rotator.get_current()
-                status_area.info(f"⏳ Работаем через [{current_cfg['provider'].upper()}] (Шаг {attempt + 1} из {max_attempts})...")
+                status_area.info(f"⏳ Пробуем запустить шаг через шлюз [{current_cfg['provider'].upper()}]...")
                 
+                # Зачищаем старые переменные, чтобы избежать конфликтов либ под капотом
+                os.environ.pop("GEMINI_API_KEY", None)
+                os.environ.pop("GROQ_API_KEY", None)
+
+                # Прописываем строго ключ текущего провайдера
                 if current_cfg["provider"] == "gemini":
                     os.environ["GEMINI_API_KEY"] = current_cfg["key"]
                 elif current_cfg["provider"] == "groq":
@@ -162,27 +162,29 @@ if start_button:
                     return crew.kickoff()
 
                 except Exception as e:
-                    st.session_state.agent_logs += f"❌ Сеть {current_cfg['provider'].upper()} перегружена. Даем ей остыть...\n"
+                    st.session_state.agent_logs += f"❌ Сеть {current_cfg['provider'].upper()} отклонила запрос.\n"
                     log_area.code(st.session_state.agent_logs)
                     
-                    for remaining in range(20, 0, -1):
-                        status_area.warning(f"⏳ Защитная пауза для {current_cfg['provider'].upper()}. Ждем: {remaining} сек...")
-                        time.sleep(1)
-                    
+                    # Если ключ не один — переключаемся МГНОВЕННО на альтернативного провайдера
                     if rotator.rotate():
                         next_cfg = rotator.get_current()
-                        st.session_state.agent_logs += f"🔄 Переключаюсь на шлюз {next_cfg['provider'].upper()}...\n"
+                        st.session_state.agent_logs += f"🔄 Смена провайдера! Переключаюсь на шлюз {next_cfg['provider'].upper()}...\n"
                         log_area.code(st.session_state.agent_logs)
+                        time.sleep(1)
                         continue
                     else:
+                        # Если остался всего один рабочий ключ во всем пуле, даем ему паузу в 15 секунд
+                        for remaining in range(15, 0, -1):
+                            status_area.warning(f"⏳ Единственный ключ в пуле перегружен. Ожидание: {remaining} сек...")
+                            time.sleep(1)
                         continue
 
         try:
-            crew_output = run_crew_with_retry(max_attempts=6)
+            crew_output = run_crew_with_retry(max_attempts=8)
             final_report = str(crew_output)
             
             if final_report.strip() == "" or final_report == "None":
-                final_report = "🤖 Все ИИ-шлюзы на бесплатном тарифе сейчас перегружены. Пожалуйста, подожди пару минут или попробуй запустить повторно."
+                final_report = "🤖 Все бесплатные ИИ-шлюзы сейчас заблокированы по IP со стороны Streamlit Cloud. Пожалуйста, попробуй запустить повторно через пару минут или используй платный ключ (Pay-as-you-go) в Google AI Studio, чтобы навсегда обойти ограничения общего IP."
             
             status_area.success("✅ Процесс завершен!")
             
