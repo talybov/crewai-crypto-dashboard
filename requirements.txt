@@ -1,7 +1,5 @@
-pydantic>=2.0
-pydantic-settings
-crewai==0.100.1
-streamlit
-google-auth
-requests
 pyTelegramBotAPI
+streamlit
+requests
+SpeechRecognition
+pydub
