@@ -13,12 +13,11 @@ st.set_page_config(page_title="Multi-Key Crypto AI Dashboard", page_icon="📊",
 st.title("📊 Рой ИИ-Агентов с ротацией API-ключей")
 st.subheader("Система обхода лимитов для бесплатного тарифа Gemini")
 
-# 3. Боковое меню для ввода НЕСКОЛЬКИХ ключей
+# 3. Боковое меню для ввода НЕСКОЛЬКИХ ключей (исправлено: убран параметр type)
 st.sidebar.markdown("### 🔑 Пул API-ключей Gemini")
 keys_input = st.sidebar.text_area(
     "Вставь сюда свои API-ключи (каждый ключ с новой строки):", 
     height=150, 
-    type="password",
     placeholder="AIzaSy...\nAIzaSy...\nAIzaSy..."
 )
 
