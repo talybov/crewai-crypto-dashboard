@@ -32,7 +32,7 @@ tg_chat_id = st.sidebar.text_input("3. Telegram Chat ID:", value="6028985531")
 st.sidebar.markdown("""
 ---
 ### 💡 Напоминание:
-Твой Bot Token и Chat ID уже сохранены в коде. 
+Твой Bot Token and Chat ID уже сохранены в коде. 
 Если ты еще не нажал **/start** в своем боте в Telegram, сделай это прямо сейчас, чтобы он смог прислать тебе отчет!
 """)
 
@@ -142,9 +142,14 @@ if start_button:
                 except Exception as e:
                     error_msg = str(e)
                     if "429" in error_msg or "Quota exceeded" in error_msg:
-                        st.session_state.agent_logs += f"⚠️ Ключ №{rotator.index + 1} поймал лимит. Ждем 10 сек...\n"
+                        st.session_state.agent_logs += f"⚠️ Ключ №{rotator.index + 1} уперся в лимиты. Ждем 60 секунд для полного сброса квот Google...\n"
                         log_area.code(st.session_state.agent_logs)
-                        time.sleep(10)
+                        
+                        # Счетчик ожидания на экране
+                        for remaining in range(60, 0, -1):
+                            status_area.warning(f"⏳ Защитная пауза от блокировок. Ждем: {remaining} сек. (Ключ №{rotator.index + 1})")
+                            time.sleep(1)
+                        
                         if rotator.rotate():
                             st.toast(f"🔄 Переключились на ключ №{rotator.index + 1}")
                         continue
@@ -155,6 +160,10 @@ if start_button:
             # Запуск анализа
             crew_output = run_crew_with_retry(max_attempts=5)
             final_report = str(crew_output)
+            
+            # Проверяем, пустой ли ответ
+            if final_report.strip() == "" or final_report == "None":
+                final_report = "🤖 Агент не смог завершить мысль из-за частых блокировок лимитов со стороны Google. Пожалуйста, попробуй запустить еще раз через пару минут или используй платный ключ."
             
             status_area.success("✅ Анализ успешно завершен!")
             
