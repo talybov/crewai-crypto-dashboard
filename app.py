@@ -29,10 +29,10 @@ def ask_cohere_chat(user_message):
     with history_lock:
         current_history = list(cohere_history)
     payload = {
-        "model": "command-r-plus",
+        "model": "command-r-08-2024",
         "message": user_message,
         "chat_history": current_history,
-        "preamble": "Ты — умный ИИ-ассистент. Отвечай на русском языке, дружелюбно и по делу."
+        "preamble": "Ты — умный универсальный ИИ-ассистент. Отвечай на русском языке, дружелюбно, развёрнуто и по делу. Всегда добавляй своё мнение или полезную информацию."
     }
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=30)
@@ -81,7 +81,7 @@ def transcribe_voice(file_id, bot_instance):
         with sr.AudioFile(wav_buffer) as source:
             audio = recognizer.record(source)
         return recognizer.recognize_google(audio, language="ru-RU")
-    except Exception as e:
+    except Exception:
         return None
 
 
