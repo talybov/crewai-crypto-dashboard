@@ -7,10 +7,11 @@ import telebot
 import speech_recognition as sr
 from pydub import AudioSegment
 import io
+import re
 
 st.set_page_config(page_title="24/7 Smart Brain Bot", page_icon="🧠")
-st.title("🧠 Бессмертный ИИ-Ассистент V4")
-st.write("Стабильный многопоточный режим на базе Command R.")
+st.title("🧠 Бессмертный ИИ-Ассистент V5")
+st.write("Стабильный режим: Крипта + Голос + Реальная Погода.")
 
 # 1. Чтение токенов из Secrets
 TG_TOKEN = st.secrets.get("TG_TOKEN", "")
@@ -27,7 +28,36 @@ else:
 history_lock = threading.Lock()
 
 
-# 2. Запрос к проверенной и стабильной модели Cohere с максимальным промптом
+# 2. Функция получения РЕАЛЬНОЙ погоды
+def get_weather(city_name):
+    try:
+        # Запрашиваем погоду в формате JSON на русском языке
+        url = f"https://wttr.in/{city_name}?format=j1&lang=ru"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            current = data['current_condition'][0]
+            
+            temp = current['temp_C'] # Температура в Цельсиях
+            desc = current['lang_ru'][0]['value'] # Описание (ясно, пасмурно и т.д.)
+            humidity = current['humidity'] # Влажность
+            wind = current['windspeedKmph'] # Скорость ветра
+            
+            report = (
+                f"🌍 **Реальные данные погоды ({city_name.capitalize()}):**\n"
+                f"🌡 Температура: {temp}°C\n"
+                f"☁️ На улице: {desc}\n"
+                f"💧 Влажность: {humidity}%\n"
+                f"💨 Ветер: {wind} км/ч\n"
+            )
+            return report
+        return None
+    except Exception as e:
+        print(f"[WEATHER ERROR] {str(e)}")
+        return None
+
+
+# 3. Запрос к Cohere (Свободное общение)
 def ask_cohere_chat(user_message):
     global cohere_history
     if not COHERE_KEY:
@@ -38,7 +68,6 @@ def ask_cohere_chat(user_message):
     with history_lock:
         current_history = list(cohere_history)
         
-    # ПРОШИВАЕМ МАКСИМАЛЬНЫЙ ИНТЕЛЛЕКТ В СТАБИЛЬНУЮ МОДЕЛЬ
     system_preamble = (
         "Ты — сверхинтеллектуальный универсальный ИИ-ассистент, главный инженер и крипто-аналитик. "
         "Ты обладаешь глубочайшими знаниями во всех областях науки, IT, программирования и финансов. "
@@ -49,7 +78,7 @@ def ask_cohere_chat(user_message):
     )
         
     payload = {
-        "model": "command-r-08-2024",  # Самая стабильная бесплатная модель, которая точно работает
+        "model": "command-r-08-2024",
         "message": user_message,
         "chat_history": current_history,
         "preamble": system_preamble
@@ -66,14 +95,12 @@ def ask_cohere_chat(user_message):
                     cohere_history = cohere_history[-20:]
             return ai_text
         else:
-            print(f"[ERROR] Код Cohere: {response.status_code} — {response.text}")
             return f"⚠️ Ошибка API Cohere (Код {response.status_code})."
     except Exception as e:
-        print(f"[CRASH] Ошибка сети Cohere: {str(e)}")
         return f"💥 Исключение сети: {str(e)}"
 
 
-# 3. Запрос к OpenRouter (ЭКСПРЕСС-АНАЛИЗ BTC)
+# 4. Запрос к OpenRouter (ЭКСПРЕСС-АНАЛИЗ BTC)
 def ask_openrouter_analysis():
     if not OR_KEY:
         return "❌ Нет OPENROUTER_API_KEY"
@@ -84,7 +111,6 @@ def ask_openrouter_analysis():
         "messages": [{"role": "user", "content": "Проанализируй рынок Bitcoin. Дай рекомендацию КУПИТЬ/ПРОДАТЬ/ДЕРЖАТЬ, объясни в 3-4 предложениях на русском."}]
     }
     try:
-        print(f"[SYSTEM] Отправка запроса в OpenRouter...")
         res = requests.post(url, json=payload, headers=headers, timeout=20)
         if res.status_code == 200:
             return res.json()['choices'][0]['message']['content']
@@ -93,7 +119,7 @@ def ask_openrouter_analysis():
         return f"💥 Ошибка OpenRouter: {str(e)}"
 
 
-# 4. Модуль распознавания голоса
+# 5. Распознавание голоса
 def transcribe_voice(file_id, bot_instance):
     try:
         file_info = bot_instance.get_file(file_id)
@@ -112,7 +138,7 @@ def transcribe_voice(file_id, bot_instance):
         return None
 
 
-# 5. ГЛОБАЛЬНЫЙ ЗАПУСК БОТА ЧЕРЕЗ КЭШ СЕРВЕРА
+# 6. ГЛОБАЛЬНЫЙ ЗАПУСК БОТА СЕРВЕРА
 @st.cache_resource(show_spinner=False)
 def init_and_run_bot():
     bot_instance = telebot.TeleBot(TG_TOKEN)
@@ -129,72 +155,87 @@ def init_and_run_bot():
             with history_lock:
                 cohere_history.clear()
             bot_instance.send_message(message.chat.id,
-                "👋 Привет! Твой супер-интеллектуальный бот снова в строю.\n\n"
-                "• Модель стабилизирована на базе Command R с расширенным промптом интеллекта.\n"
-                "• Задавай любые вопросы или наговаривай голосом.\n"
-                "• Команда 'Как дела у агентов' выведет статус крипто-проекта.")
+                "👋 Привет! Твой супер-бот полностью обновлен.\n\n"
+                "• Напиши 'Погода Москва' (или любой город) — выведу реальный прогноз\n"
+                "• Напиши 'Анализ' — быстрый сигнал по BTC\n"
+                "• Напиши 'Как дела у агентов' — статус крипто-проекта\n"
+                "• Любой текст или Голосовое — свободное общение с ИИ.")
+
+    # Обработка входящего текста или распознанного голоса
+    def process_user_logic(chat_id, text_message):
+        user_text_lower = text_message.lower().strip()
+        
+        # 1. ТРИГГЕР ПОГОДЫ
+        if "погода" in user_text_lower:
+            # Извлекаем название города (всё, что идет после слова "погода")
+            city = "москва" # по умолчанию
+            match = re.search(r"погода\s+([а-яёa-z\-]+)", user_text_lower)
+            if match:
+                city = match.group(1)
+            
+            bot_instance.send_chat_action(chat_id, 'typing')
+            weather_data = get_weather(city)
+            
+            if weather_data:
+                # Отдаем погоду нейросети, чтобы она прокомментировала её в своем стиле
+                ai_comment_prompt = f"Вот реальная погода в городе {city}: {weather_data}. Напиши краткий, остроумный комментарий к этой погоде в своем фирменном стиле крипто-инженера."
+                ai_comment = ask_cohere_chat(ai_comment_prompt)
+                
+                final_msg = f"{weather_data}\n💭 **ИИ-Комментарий:** {ai_comment}"
+                bot_instance.send_message(chat_id, final_msg)
+            else:
+                bot_instance.send_message(chat_id, f"❌ Не удалось получить данные погоды для города '{city}'. Проверь название.")
+            return
+
+        # 2. ТРИГГЕР АНАЛИЗА
+        if user_text_lower in ["анализ", "analyze", "/analyze"]:
+            p_msg = bot_instance.send_message(chat_id, "⏳ Анализирую рынок...")
+            report = ask_openrouter_analysis()
+            try: bot_instance.delete_message(chat_id, p_msg.message_id)
+            except: pass
+            bot_instance.send_message(chat_id, f"📊 Анализ Bitcoin:\n\n{report}")
+            return
+            
+        # 3. ТРИГГЕР СТАТУСА АГЕНТОВ
+        if "как дела у агентов" in user_text_lower or "статус агентов" in user_text_lower:
+            status_report = (
+                "🤖 Отчёт по крипто-экосистеме ИИ-агентов:\n\n"
+                "1. 📈 Агент базового анализа рынка (OpenRouter): Активен. Собирает экспресс-отчеты по BTC через Gemini 2.0 Flash.\n"
+                "2. 🗣 Командный интерфейс (Cohere): Стабилен на Command R. Успешно подключен метео-модуль wttr.in.\n"
+                "3. 📊 Модуль мульти-монет (В планах): Внедрение реальных данных (ETH, SOL) через CoinGecko API.\n"
+                "4. 💼 Торговый агент (Paper Trading): Симуляция сделок.\n\n"
+                "⚡ Инфраструктура готова. Какой шаг делаем дальше?"
+            )
+            bot_instance.send_message(chat_id, status_report)
+            return
+            
+        # 4. ОБЫЧНЫЙ ДИАЛОГ
+        bot_instance.send_chat_action(chat_id, 'typing')
+        ai_response = ask_cohere_chat(text_message)
+        bot_instance.send_message(chat_id, ai_response)
 
     @bot_instance.message_handler(content_types=['voice'])
     def handle_voice(message):
-        if str(message.chat.id) != TG_CHAT_ID:
-            return
+        if str(message.chat.id) != TG_CHAT_ID: return
         try:
             bot_instance.send_chat_action(message.chat.id, 'typing')
             text = transcribe_voice(message.voice.file_id, bot_instance)
             if text:
                 print(f"[VOICE] Распознано: {text}")
-                user_text_lower = text.lower().strip()
-                
-                if "как дела у агентов" in user_text_lower or "статус агентов" in user_text_lower:
-                    send_status_report(bot_instance, message.chat.id)
-                    return
-                    
-                ai_response = ask_cohere_chat(text)
-                bot_instance.send_message(message.chat.id, ai_response)
+                process_user_logic(message.chat.id, text)
             else:
-                bot_instance.send_message(message.chat.id, "❌ Не смог распознать звук в голосовом сообщении.")
+                bot_instance.send_message(message.chat.id, "❌ Не смог распознать звук в голосовом.")
         except Exception as e:
-            bot_instance.send_message(message.chat.id, f"💥 Ошибка в обработке голоса: {str(e)}")
+            bot_instance.send_message(message.chat.id, f"💥 Ошибка голос: {str(e)}")
 
     @bot_instance.message_handler(func=lambda message: True)
     def handle_all_messages(message):
-        if str(message.chat.id) != TG_CHAT_ID:
-            return
+        if str(message.chat.id) != TG_CHAT_ID: return
         try:
             user_text = message.text or ""
-            user_text_lower = user_text.lower().strip()
-            
-            # 1. Анализ Биткоина
-            if user_text_lower in ["анализ", "analyze", "/analyze"]:
-                p_msg = bot_instance.send_message(message.chat.id, "⏳ Анализирую рынок...")
-                report = ask_openrouter_analysis()
-                try: bot_instance.delete_message(message.chat.id, p_msg.message_id)
-                except: pass
-                bot_instance.send_message(message.chat.id, f"📊 Анализ Bitcoin:\n\n{report}")
-                return
-                
-            # 2. Статус Агентов
-            if "как дела у агентов" in user_text_lower or "статус агентов" in user_text_lower:
-                send_status_report(bot_instance, message.chat.id)
-                return
-                
-            # 3. Свободное общение через стабильный Cohere
-            bot_instance.send_chat_action(message.chat.id, 'typing')
-            ai_response = ask_cohere_chat(user_text)
-            bot_instance.send_message(message.chat.id, ai_response)
+            process_user_logic(message.chat.id, user_text)
         except Exception as e:
             bot_instance.send_message(message.chat.id, f"💥 Ошибка обработки: {str(e)}")
-
-    def send_status_report(bot_obj, chat_id):
-        status_report = (
-            "🤖 Отчёт по крипто-экосистеме ИИ-агентов:\n\n"
-            "1. 📈 Агент базового анализа рынка (OpenRouter): Активен. Собирает экспресс-отчеты по BTC через Gemini 2.0 Flash.\n"
-            "2. 🗣 Командный интерфейс (Cohere): Стабилизирован на модели Command R. Мозги за счет промпта работают на максимуме.\n"
-            "3. 📊 Модуль мульти-монет (В планах): Внедрение реальных данных (ETH, SOL) через CoinGecko API.\n"
-            "4. 💼 Торговый агент (Paper Trading): Симуляция сделок.\n\n"
-            "⚡ Инфраструктура полностью готова к расширению функционала."
-        )
-        bot_obj.send_message(chat_id, status_report)
 
     def run_polling():
         print("[SYSTEM] Фоновый поток запущен!")
@@ -213,6 +254,6 @@ def init_and_run_bot():
 
 if TG_TOKEN:
     bot = init_and_run_bot()
-    st.success("✅ Бот успешно запущен в безопасном интеллектуальном режиме!")
+    st.success("✅ Метео-модуль успешно интегрирован в архитектуру бота!")
 else:
     st.error("❌ Заполните TG_TOKEN в Secrets!")
