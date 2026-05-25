@@ -10,16 +10,44 @@ import io
 
 st.set_page_config(page_title="24/7 Dual AI Bot", page_icon="🤖")
 st.title("🤖 Умный ИИ-Ассистент")
-st.write("Голосовые сообщения + умный ИИ через Cohere Command R Plus.")
 
 TG_TOKEN = st.secrets.get("TG_TOKEN", "")
 TG_CHAT_ID = str(st.secrets.get("TG_CHAT_ID", "")).strip()
 OR_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
 COHERE_KEY = st.secrets.get("COHERE_API_KEY", "")
 
-# Глобальная история — работает в потоке
 cohere_history = []
 history_lock = threading.Lock()
+
+
+def ask_cohere_chat(user_message):
+    global cohere_history
+    if not COHERE_KEY:
+        return "❌ Нет COHERE_API_KEY!"
+    url = "https://api.cohere.com/v1/chat"
+    headers = {"Authorization": f"Bearer {COHERE_KEY}", "Content-Type": "application/json"}
+    with history_lock:
+        current_history = list(cohere_history)
+    payload = {
+        "model": "command-r-plus",
+        "message": user_message,
+        "chat_history": current_history,
+        "preamble": "Ты — умный ИИ-ассистент. Отвечай на русском языке, дружелюбно и по делу."
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            ai_text = response.json().get("text", "Нет ответа")
+            with history_lock:
+                cohere_history.append({"role": "USER", "message": user_message})
+                cohere_history.append({"role": "CHATBOT", "message": ai_text})
+                if len(cohere_history) > 20:
+                    cohere_history = cohere_history[-20:]
+            return ai_text
+        else:
+            return f"⚠️ Ошибка Cohere: {response.status_code} — {response.text[:200]}"
+    except Exception as e:
+        return f"💥 Исключение: {str(e)}"
 
 
 def ask_openrouter_analysis():
@@ -35,47 +63,9 @@ def ask_openrouter_analysis():
         res = requests.post(url, json=payload, headers=headers, timeout=20)
         if res.status_code == 200:
             return res.json()['choices'][0]['message']['content']
-    except Exception:
-        pass
-    return "🤖 Лимиты OpenRouter заняты. Попробуй позже!"
-
-
-def ask_cohere_chat(user_message):
-    global cohere_history
-    if not COHERE_KEY:
-        return "❌ Нет COHERE_API_KEY!"
-    url = "https://api.cohere.com/v1/chat"
-    headers = {"Authorization": f"Bearer {COHERE_KEY}", "Content-Type": "application/json"}
-    with history_lock:
-        current_history = list(cohere_history)
-    payload = {
-        "model": "command-r-plus",
-        "message": user_message,
-        "chat_history": current_history,
-        "preamble": """Ты — умный универсальный ИИ-ассистент. Твоя задача — давать полезные, умные и развёрнутые ответы на любые вопросы.
-
-Правила:
-- Отвечай только на русском языке
-- Будь дружелюбным и живым, как настоящий собеседник
-- Если вопрос про рынок или крипту — давай конкретный анализ
-- Если просят совет — давай чёткий совет с объяснением
-- Если просто общение — поддерживай разговор интересно
-- Всегда добавляй свою мысль, мнение или полезную информацию к ответу"""
-    }
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-        if response.status_code == 200:
-            ai_text = response.json().get("text", "")
-            with history_lock:
-                cohere_history.append({"role": "USER", "message": user_message})
-                cohere_history.append({"role": "CHATBOT", "message": ai_text})
-                if len(cohere_history) > 20:
-                    cohere_history = cohere_history[-20:]
-            return ai_text
-        else:
-            return f"⚠️ Ошибка Cohere (Код {response.status_code})"
+        return f"⚠️ Ошибка OpenRouter: {res.status_code}"
     except Exception as e:
-        return f"💥 Сбой сети: {str(e)}"
+        return f"💥 Ошибка: {str(e)}"
 
 
 def transcribe_voice(file_id, bot_instance):
@@ -90,9 +80,8 @@ def transcribe_voice(file_id, bot_instance):
         recognizer = sr.Recognizer()
         with sr.AudioFile(wav_buffer) as source:
             audio = recognizer.record(source)
-        text = recognizer.recognize_google(audio, language="ru-RU")
-        return text
-    except Exception:
+        return recognizer.recognize_google(audio, language="ru-RU")
+    except Exception as e:
         return None
 
 
@@ -109,43 +98,49 @@ def start_bot_thread():
         if str(message.chat.id) == TG_CHAT_ID:
             with history_lock:
                 cohere_history.clear()
-            bot_instance.reply_to(message, "👋 Привет! Умный ИИ-ассистент на связи.\n\n"
-                                           "• Напиши Анализ — получишь сигнал по BTC\n"
-                                           "• Отправь голосовое — отвечу сразу\n"
-                                           "• Любой текст — поговорим на любую тему\n"
-                                           "• /clear — очистить историю диалога")
+            bot_instance.send_message(message.chat.id,
+                "👋 Привет! Я на связи.\n\n"
+                "• Напиши Анализ — сигнал по BTC\n"
+                "• Голосовое — отвечу сразу\n"
+                "• Любой текст — поговорим\n"
+                "• /clear — очистить историю")
 
     @bot_instance.message_handler(content_types=['voice'])
     def handle_voice(message):
         if str(message.chat.id) != TG_CHAT_ID:
             return
-        bot_instance.send_chat_action(message.chat.id, 'typing')
-        text = transcribe_voice(message.voice.file_id, bot_instance)
-        if text:
+        try:
             bot_instance.send_chat_action(message.chat.id, 'typing')
-            ai_response = ask_cohere_chat(text)
-            bot_instance.send_message(message.chat.id, ai_response)
-        else:
-            bot_instance.send_message(message.chat.id, "❌ Не смог распознать. Попробуй ещё раз!")
+            text = transcribe_voice(message.voice.file_id, bot_instance)
+            if text:
+                ai_response = ask_cohere_chat(text)
+                bot_instance.send_message(message.chat.id, ai_response)
+            else:
+                bot_instance.send_message(message.chat.id, "❌ Не смог распознать голос.")
+        except Exception as e:
+            bot_instance.send_message(message.chat.id, f"💥 Ошибка голос: {str(e)}")
 
     @bot_instance.message_handler(func=lambda message: True)
     def handle_all_messages(message):
         if str(message.chat.id) != TG_CHAT_ID:
             return
-        user_text = message.text
-        user_text_lower = user_text.lower().strip()
-        if user_text_lower in ["анализ", "analyze", "/analyze"]:
-            p_msg = bot_instance.send_message(message.chat.id, "⏳ Анализ запущен: [▓▓▓▓░░░░░░] 40%")
-            report = ask_openrouter_analysis()
-            try:
-                bot_instance.delete_message(message.chat.id, p_msg.message_id)
-            except Exception:
-                pass
-            bot_instance.send_message(message.chat.id, f"📊 Анализ Bitcoin:\n\n{report}")
-            return
-        bot_instance.send_chat_action(message.chat.id, 'typing')
-        ai_response = ask_cohere_chat(user_text)
-        bot_instance.send_message(message.chat.id, ai_response)
+        try:
+            user_text = message.text or ""
+            user_text_lower = user_text.lower().strip()
+            if user_text_lower in ["анализ", "analyze", "/analyze"]:
+                p_msg = bot_instance.send_message(message.chat.id, "⏳ Анализирую рынок...")
+                report = ask_openrouter_analysis()
+                try:
+                    bot_instance.delete_message(message.chat.id, p_msg.message_id)
+                except Exception:
+                    pass
+                bot_instance.send_message(message.chat.id, f"📊 Анализ Bitcoin:\n\n{report}")
+                return
+            bot_instance.send_chat_action(message.chat.id, 'typing')
+            ai_response = ask_cohere_chat(user_text)
+            bot_instance.send_message(message.chat.id, ai_response)
+        except Exception as e:
+            bot_instance.send_message(message.chat.id, f"💥 Ошибка: {str(e)}")
 
     def run_polling():
         while True:
@@ -163,6 +158,6 @@ if TG_TOKEN:
     if "bot_started" not in st.session_state:
         start_bot_thread()
         st.session_state.bot_started = True
-    st.success("✅ Умный бот запущен! Голосовые поддерживаются 🎙")
+    st.success("✅ Бот запущен!")
 else:
-    st.error("❌ Не найден TG_TOKEN в Secrets!")
+    st.error("❌ Не найден TG_TOKEN!")
