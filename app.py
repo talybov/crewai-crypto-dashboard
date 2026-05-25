@@ -5,7 +5,7 @@ import streamlit as st
 # 1. Отключаем проблемный трекер OpenTelemetry до импорта CrewAI
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
-from crewai import Agent, Task, Crew
+from crewai import Agent, Task, Crew, LLM
 
 # 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Crypto AI Agents Dashboard", page_icon="📊", layout="wide")
@@ -54,39 +54,45 @@ if start_button:
     if not gemini_key:
         st.error("❌ Сначала вставь свой API-ключ Gemini в боковое меню!")
     else:
-        # Передаем ключ в переменную окружения, которую ищет CrewAI
+        # Устанавливаем ключ в переменную среды
         os.environ["GEMINI_API_KEY"] = gemini_key
 
         status_area.info("⏳ Агент просыпается и начинает анализ рынка...")
 
-        # Инициализируем агента через правильный коннектор google_genai
-        analyst = Agent(
-            role="Financial Market Analyst",
-            goal="Analyze cryptocurrency market trends and provide clear trading signals",
-            backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
-            llm="google_genai/gemini-2.0-flash",
-            verbose=True
-        )
-
-        # Формируем задачу
-        task = Task(
-            description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
-            Учти: сейчас май 2026 года.
-            Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
-            Объясни своё решение в 3-4 предложениях.
-            ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
-            expected_output="Trading signal with justification in Russian language",
-            agent=analyst
-        )
-
-        # Собираем команду
-        crew = Crew(agents=[analyst], tasks=[task], verbose=True)
-
-        # Перенаправляем стандартный вывод терминала в наше правое окно на сайте
-        old_stdout = sys.stdout
-        sys.stdout = StreamlitStdoutTrigger(log_area)
-        
         try:
+            # Настраиваем модель через официальный объект LLM, чтобы избежать капризов litellm
+            custom_llm = LLM(
+                model="gemini/gemini-2.0-flash",
+                api_key=gemini_key
+            )
+
+            # Инициализируем агента и передаем ему объект модели
+            analyst = Agent(
+                role="Financial Market Analyst",
+                goal="Analyze cryptocurrency market trends and provide clear trading signals",
+                backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
+                llm=custom_llm,
+                verbose=True
+            )
+
+            # Формируем задачу
+            task = Task(
+                description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
+                Учти: сейчас май 2026 года.
+                Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
+                Объясни своё решение в 3-4 предложениях.
+                ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
+                expected_output="Trading signal with justification in Russian language",
+                agent=analyst
+            )
+
+            # Собираем команду
+            crew = Crew(agents=[analyst], tasks=[task], verbose=True)
+
+            # Перенаправляем стандартный вывод терминала в наше правое окно на сайте
+            old_stdout = sys.stdout
+            sys.stdout = StreamlitStdoutTrigger(log_area)
+            
             # Запускаем синхронный процесс
             result = crew.kickoff()
             
@@ -100,5 +106,6 @@ if start_button:
                 st.success(str(result))
                 
         except Exception as e:
-            sys.stdout = old_stdout
+            if 'old_stdout' in locals() and sys.stdout != old_stdout:
+                sys.stdout = old_stdout
             status_area.error(f"❌ Произошла ошибка: {str(e)}")
