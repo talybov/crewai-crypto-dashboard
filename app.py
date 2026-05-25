@@ -6,7 +6,8 @@ from crewai import Agent, Task, Crew
 
 # Настройка стилей страницы
 st.set_page_config(page_title="Crypto AI Agents Dashboard", page_icon="📊", layout="wide")
-
+# Отключаем телеметрию CrewAI, чтобы она не ругалась при повторных запусках кнопки
+os.environ["OTEL_SDK_DISABLED"] = "true"
 st.title("📊 Рой ИИ-Агентов: Финансовый Анализ Рынка")
 st.subheader("Мониторинг работы и взаимодействия агентов в реальном времени")
 
