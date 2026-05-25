@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import streamlit as st
 
@@ -13,6 +12,10 @@ st.set_page_config(page_title="Multi-Key Crypto AI Dashboard", page_icon="📊",
 
 st.title("📊 Рой ИИ-Агентов с ротацией и паузами")
 st.subheader("Система обхода лимитов для бесплатного тарифа Gemini")
+
+# Инициализация сессии для хранения логов агента, чтобы они не пропадали
+if "agent_logs" not in st.session_state:
+    st.session_state.agent_logs = ""
 
 # 3. Боковое меню для ввода НЕСКОЛЬКИХ ключей
 st.sidebar.markdown("### 🔑 Пул API-ключей Gemini")
@@ -40,18 +43,20 @@ with col1:
 with col2:
     st.markdown("### ⚙️ Внутренние мысли и шаги Агентов")
     log_area = st.empty()
+    # Сразу показываем текущие логи (или пустоту)
+    log_area.code(st.session_state.agent_logs if st.session_state.agent_logs else "Ожидание запуска агента...")
 
-# 4. Класс для перехвата логов из терминала и вывода их на экран
-class StreamlitStdoutTrigger:
-    def __init__(self, placeholder):
-        self.placeholder = placeholder
-        self.text = ""
-    def write(self, bytes_data):
-        self.text += bytes_data
-        clean_text = self.text.replace("Entering New CrewAgentExecutor Chain", "🤖 Агент переходит к следующему шагу...")
-        self.placeholder.code(clean_text)
-    def flush(self):
-        pass
+# 4. Функция-колбэк, которая вызывается СТРОГО на каждом шаге агента
+def streamlit_callback(step_output):
+    # Извлекаем текст мысли агента
+    if hasattr(step_output, 'thought'):
+        thought_text = f"🤖 Мысль агента:\n{step_output.thought}\n\n"
+    else:
+        thought_text = f"📝 Выполнен шаг:\n{str(step_output)}\n\n"
+    
+    # Добавляем в историю и мгновенно обновляем интерфейс
+    st.session_state.agent_logs += thought_text
+    log_area.code(st.session_state.agent_logs)
 
 # 5. Менеджер ротации ключей
 class KeyRotator:
@@ -72,6 +77,10 @@ class KeyRotator:
 
 # 6. Логика работы при нажатии на кнопку
 if start_button:
+    # Очищаем логи перед новым запуском
+    st.session_state.agent_logs = "🚀 Запуск роя агентов...\n"
+    log_area.code(st.session_state.agent_logs)
+
     # Разбираем введенные ключи по строкам
     api_keys = keys_input.split("\n") if keys_input else []
     rotator = KeyRotator(api_keys)
@@ -88,7 +97,6 @@ if start_button:
         def run_crew_with_retry(max_attempts=5):
             for attempt in range(max_attempts):
                 try:
-                    # Настраиваем модель на текущем активном книге
                     active_key = rotator.get_current_key()
                     os.environ["GEMINI_API_KEY"] = active_key
                     
@@ -97,12 +105,14 @@ if start_button:
                         api_key=active_key
                     )
 
+                    # Передаем streamlit_callback в step_callback агента
                     analyst = Agent(
                         role="Financial Market Analyst",
                         goal="Analyze cryptocurrency market trends and provide clear trading signals",
                         backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
                         llm=custom_llm,
-                        verbose=True
+                        verbose=True,
+                        step_callback=streamlit_callback
                     )
 
                     task = Task(
@@ -120,15 +130,28 @@ if start_button:
 
                 except Exception as e:
                     error_msg = str(e)
-                    # Если поймали лимит квот (429) — делаем паузу и пробуем ротацию
                     if "429" in error_msg or "Quota exceeded" in error_msg:
+                        st.session_state.agent_logs += f"⚠️ Ключ №{rotator.index + 1} поймал лимит. Ждем 10 сек...\n"
+                        log_area.code(st.session_state.agent_logs)
+                        
                         status_area.warning(f"⚠️ Ключ №{rotator.index + 1} уперся в лимиты. Ждем 10 секунд для сброса квот...")
-                        time.sleep(10)  # Даем серверам Google «остыть»
+                        time.sleep(10)
                         
                         if rotator.rotate():
                             st.toast(f"🔄 Переключились на ключ №{rotator.index + 1}")
                         continue
                     else:
-                        raise e # Прочие ошибки пробрасываем дальше
+                        raise e
 
-        # Перенаправляем ло
+        try:
+            # Запускаем процесс
+            result = run_crew_with_retry(max_attempts=5)
+            
+            status_area.success("✅ Анализ успешно завершен!")
+            with result_area:
+                st.markdown("---")
+                st.markdown("### 📊 ФИНАЛЬНЫЙ ВЕРДИКТ:")
+                st.success(str(result))
+                
+        except Exception as e:
+            status_area.error(f"❌ Произошла ошибка после нескольких попыток: {str(e)}")
