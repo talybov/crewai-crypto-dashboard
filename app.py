@@ -11,32 +11,23 @@ from crewai import Agent, Task, Crew, LLM
 # 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Multi-Provider AI Dashboard", page_icon="🤖", layout="wide")
 
-st.title("📊 Мульти-модельный Рой Агентов (Обход Лимитов)")
-st.subheader("Автоматическое переключение между Gemini, Groq (Llama) и другими ИИ")
+st.title("📊 Умный Мульти-модельный Рой Агентов")
+st.subheader("Система динамического распределения нагрузки между ИИ")
 
 # Инициализация сессии для хранения логов агента
 if "agent_logs" not in st.session_state:
     st.session_state.agent_logs = ""
 
-# 3. Боковое меню (Твои данные Telegram уже вшиты)
+# 3. Боковое меню
 st.sidebar.markdown("### 🔑 Пул ключей разных Нейросетей")
 keys_input = st.sidebar.text_area(
-    "Вставь сюда ВСЕ свои ключи (Gemini, Groq и др.) в любом порядке, каждый с новой строки:", 
+    "Вставь сюда свои ключи (Gemini, Groq), каждый с новой строки:", 
     height=180, 
     placeholder="AIzaSy... (Gemini)\ngsk_... (Groq / Llama)\n..."
 )
 
 tg_token = st.sidebar.text_input("Telegram Bot Token:", type="password", value="7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI")
 tg_chat_id = st.sidebar.text_input("Telegram Chat ID:", value="6028985531")
-
-st.sidebar.markdown("""
----
-### 💡 Какие ключи можно миксовать?
-* **Gemini:** начинается на `AIzaSy...`
-* **Groq (Llama 3):** начинается на `gsk_...` (брать на console.groq.com)
-
-Система сама поймет, какой это провайдер, и переключит модель на лету без пауз!
-""")
 
 # Разделение экрана на две колонки
 col1, col2 = st.columns([1, 1])
@@ -80,14 +71,12 @@ class MultiProviderRotator:
         self.pool = []
         self.index = 0
         
-        # Автоматически распознаем провайдера для каждого ключа
         for key in self.raw_keys:
             if key.startswith("AIzaSy"):
                 self.pool.append({"provider": "gemini", "model": "gemini/gemini-2.0-flash", "key": key})
             elif key.startswith("gsk_"):
                 self.pool.append({"provider": "groq", "model": "groq/llama3-70b-8192", "key": key})
             else:
-                # По умолчанию, если префикс неизвестен, пробуем как Gemini
                 self.pool.append({"provider": "gemini", "model": "gemini/gemini-2.0-flash", "key": key})
                 
     def get_current(self):
@@ -113,23 +102,23 @@ if start_button:
         st.error("❌ Сначала вставь хотя бы один API-ключ в боковое меню!")
     else:
         current = rotator.get_current()
-        status_area.info(f"⏳ Агент запускается на базе [{current['provider'].upper()}] (Модель {rotator.index + 1} из {len(rotator.pool)})...")
 
-        def run_crew_with_retry(max_attempts=5):
+        def run_crew_with_retry(max_attempts=6):
             for attempt in range(max_attempts):
                 current_cfg = rotator.get_current()
+                status_area.info(f"⏳ Работаем через [{current_cfg['provider'].upper()}] (Шаг {attempt + 1} из {max_attempts})...")
                 
-                # Принудительно прописываем нужные переменные окружения для litellm
                 if current_cfg["provider"] == "gemini":
                     os.environ["GEMINI_API_KEY"] = current_cfg["key"]
                 elif current_cfg["provider"] == "groq":
                     os.environ["GROQ_API_KEY"] = current_cfg["key"]
 
                 try:
-                    # Инициализируем LLM с правильными параметрами под конкретного провайдера
+                    # Настройка LLM с жестким ограничением повторов (max_retries=1)
                     custom_llm = LLM(
                         model=current_cfg["model"],
-                        api_key=current_cfg["key"]
+                        api_key=current_cfg["key"],
+                        max_retries=1
                     )
 
                     analyst = Agent(
@@ -155,31 +144,31 @@ if start_button:
                     return crew.kickoff()
 
                 except Exception as e:
-                    error_msg = str(e)
-                    st.session_state.agent_logs += f"❌ Ошибка на модели {current_cfg['provider'].upper()}: лимит или сбой.\n"
+                    st.session_state.agent_logs += f"❌ Сеть {current_cfg['provider'].upper()} перегружена. Даем ей остыть...\n"
                     log_area.code(st.session_state.agent_logs)
                     
-                    # Если есть другие провайдеры в пуле — переключаемся МГНОВЕННО, без долгих пауз!
+                    # Делаем паузу 20 секунд, чтобы сервер провайдера обнулил счетчик запросов
+                    for remaining in range(20, 0, -1):
+                        status_area.warning(f"⏳ Защитная пауза для {current_cfg['provider'].upper()}. Ждем: {remaining} сек...")
+                        time.sleep(1)
+                    
                     if rotator.rotate():
                         next_cfg = rotator.get_current()
-                        status_area.warning(f"🔄 Сбой лимитов. Мгновенно переключаюсь на сеть: [{next_cfg['provider'].upper()}]...")
-                        time.sleep(2) # Чисто символическая пауза на переключение шлюза
+                        st.session_state.agent_logs += f"🔄 Переключаюсь на шлюз {next_cfg['provider'].upper()}...\n"
+                        log_area.code(st.session_state.agent_logs)
                         continue
                     else:
-                        # Если ключ всего один, то делаем стандартную паузу
-                        status_area.warning("⏳ Ключи кончились. Ожидаем 30 секунд...")
-                        time.sleep(30)
                         continue
 
         try:
-            # Запуск анализа
-            crew_output = run_crew_with_retry(max_attempts=len(rotator.pool) + 2)
+            # Запуск процесса
+            crew_output = run_crew_with_retry(max_attempts=6)
             final_report = str(crew_output)
             
             if final_report.strip() == "" or final_report == "None":
-                final_report = "🤖 Все доступные нейросети в пуле временно перегружены лимитами. Пожалуйста, добавь ключ Groq (Llama) или повтори попытку позже."
+                final_report = "🤖 Все ИИ-шлюзы на бесплатном тарифе сейчас перегружены. Пожалуйста, подожди пару минут или попробуй запустить повторно."
             
-            status_area.success("✅ Анализ успешно завершен!")
+            status_area.success("✅ Процесс завершен!")
             
             with result_area:
                 st.markdown("---")
@@ -192,7 +181,7 @@ if start_button:
                 if send_telegram_message(tg_token, tg_chat_id, telegram_text):
                     status_area.success("✅ Отчет успешно отправлен в Telegram!")
                 else:
-                    st.warning("⚠️ Не удалось отправить в ТГ. Нажми /start в боте.")
+                    st.warning("⚠️ Не удалось отправить в ТГ. Проверь /start в боте.")
 
         except Exception as e:
             status_area.error(f"❌ Критическая ошибка: {str(e)}")
