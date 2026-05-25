@@ -9,8 +9,8 @@ from pydub import AudioSegment
 import io
 
 st.set_page_config(page_title="24/7 Dual AI Bot", page_icon="🤖")
-st.title("🤖 Изолированный ИИ-Ассистент")
-st.write("Свободное общение + голосовые сообщения через Cohere Command.")
+st.title("🤖 Умный ИИ-Ассистент")
+st.write("Голосовые сообщения + умный ИИ через Cohere Command R Plus.")
 
 TG_TOKEN = st.secrets.get("TG_TOKEN", "")
 TG_CHAT_ID = str(st.secrets.get("TG_CHAT_ID", "")).strip()
@@ -45,10 +45,19 @@ def ask_cohere_chat(user_message):
     url = "https://api.cohere.com/v1/chat"
     headers = {"Authorization": f"Bearer {COHERE_KEY}", "Content-Type": "application/json"}
     payload = {
-        "model": "command-r",
+        "model": "command-r-plus",
         "message": user_message,
         "chat_history": st.session_state.cohere_history,
-        "preamble": "Ты — продвинутый ИИ-инженер и партнёр пользователя. Вы вместе разрабатываете систему ИИ-агентов. Отвечай кратко, дружелюбно, только на русском языке."
+        "preamble": """Ты — умный универсальный ИИ-ассистент. Твоя задача — давать полезные, умные и развёрнутые ответы на любые вопросы.
+
+Правила:
+- Отвечай только на русском языке
+- Будь дружелюбным и живым, как настоящий собеседник
+- Если вопрос про рынок или крипту — давай конкретный анализ
+- Если просят совет — давай чёткий совет с объяснением
+- Если просто общение — поддерживай разговор интересно
+- Никогда не говори что ты просто переводишь или повторяешь
+- Всегда добавляй свою мысль, мнение или полезную информацию к ответу"""
     }
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=25)
@@ -57,8 +66,8 @@ def ask_cohere_chat(user_message):
             ai_text = result.get("text", "")
             st.session_state.cohere_history.append({"role": "USER", "message": user_message})
             st.session_state.cohere_history.append({"role": "CHATBOT", "message": ai_text})
-            if len(st.session_state.cohere_history) > 15:
-                st.session_state.cohere_history = st.session_state.cohere_history[-15:]
+            if len(st.session_state.cohere_history) > 20:
+                st.session_state.cohere_history = st.session_state.cohere_history[-20:]
             return ai_text
         else:
             return f"⚠️ Ошибка Cohere (Код {response.status_code})"
@@ -94,22 +103,25 @@ def start_bot_thread():
     @bot_instance.message_handler(commands=['start', 'clear'])
     def send_welcome(message):
         if str(message.chat.id) == TG_CHAT_ID:
-            bot_instance.reply_to(message, "👋 Привет! Я на связи.\n\n"
+            st.session_state.cohere_history = []
+            bot_instance.reply_to(message, "👋 Привет! Умный ИИ-ассистент на связи.\n\n"
                                            "• Напиши Анализ — получишь сигнал по BTC\n"
-                                           "• Отправь голосовое — распознаю и отвечу\n"
-                                           "• Любой текст — свободное общение")
+                                           "• Отправь голосовое — распознаю и отвечу умно\n"
+                                           "• Любой текст — поговорим на любую тему\n"
+                                           "• /clear — очистить историю диалога")
 
     @bot_instance.message_handler(content_types=['voice'])
     def handle_voice(message):
         if str(message.chat.id) != TG_CHAT_ID:
             return
         bot_instance.send_chat_action(message.chat.id, 'typing')
-        bot_instance.send_message(message.chat.id, "🎙 Распознаю голосовое...")
+        bot_instance.send_message(message.chat.id, "🎙 Распознаю...")
         text = transcribe_voice(message.voice.file_id, bot_instance)
         if text:
-            bot_instance.send_message(message.chat.id, f"🗣 Ты сказал: {text}")
+            bot_instance.send_message(message.chat.id, f"🗣 Ты: {text}")
+            bot_instance.send_chat_action(message.chat.id, 'typing')
             ai_response = ask_cohere_chat(text)
-            bot_instance.send_message(message.chat.id, ai_response)
+            bot_instance.send_message(message.chat.id, f"🤖 {ai_response}")
         else:
             bot_instance.send_message(message.chat.id, "❌ Не смог распознать. Попробуй ещё раз!")
 
@@ -130,7 +142,7 @@ def start_bot_thread():
             return
         bot_instance.send_chat_action(message.chat.id, 'typing')
         ai_response = ask_cohere_chat(user_text)
-        bot_instance.send_message(message.chat.id, ai_response)
+        bot_instance.send_message(message.chat.id, f"🤖 {ai_response}")
 
     def run_polling():
         while True:
@@ -149,6 +161,6 @@ if TG_TOKEN:
         start_bot_thread()
         st.session_state.bot_started = True
 
-    st.success("✅ Бот запущен! Голосовые сообщения поддерживаются 🎙")
+    st.success("✅ Умный бот запущен! Голосовые поддерживаются 🎙")
 else:
     st.error("❌ Не найден TG_TOKEN в Secrets!")
