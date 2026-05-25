@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import streamlit as st
 
 # 1. Отключаем проблемный трекер OpenTelemetry до импорта CrewAI
@@ -10,10 +11,10 @@ from crewai import Agent, Task, Crew, LLM
 # 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Multi-Key Crypto AI Dashboard", page_icon="📊", layout="wide")
 
-st.title("📊 Рой ИИ-Агентов с ротацией API-ключей")
+st.title("📊 Рой ИИ-Агентов с ротацией и паузами")
 st.subheader("Система обхода лимитов для бесплатного тарифа Gemini")
 
-# 3. Боковое меню для ввода НЕСКОЛЬКИХ ключей (исправлено: убран параметр type)
+# 3. Боковое меню для ввода НЕСКОЛЬКИХ ключей
 st.sidebar.markdown("### 🔑 Пул API-ключей Gemini")
 keys_input = st.sidebar.text_area(
     "Вставь сюда свои API-ключи (каждый ключ с новой строки):", 
@@ -23,8 +24,7 @@ keys_input = st.sidebar.text_area(
 
 st.sidebar.markdown("""
 ### 💡 Как это работает?
-Выпусти 2-3 бесплатных ключа на разные Google-аккаунты и вставь их сюда. 
-Программа создаст из них очередь. Если один ключ упрется в лимит запросов, система автоматически переключится на следующий!
+Программа создаст из ключей очередь. Если один ключ или IP-адрес упрется в лимит, система сделает паузу 10 секунд, переключится на следующий ключ и продолжит работу без вылета!
 """)
 
 # Разделение экрана на две колонки
@@ -85,7 +85,7 @@ if start_button:
         status_area.info(f"⏳ Агент начинает анализ рынка (Используется ключ {rotator.index + 1} из {len(rotator.keys)})...")
 
         # Функция для запуска Crew с возможностью перезапуска при ошибке 429
-        def run_crew_with_retry(max_attempts=3):
+        def run_crew_with_retry(max_attempts=5):
             for attempt in range(max_attempts):
                 try:
                     # Настраиваем модель на текущем активном ключе
@@ -114,35 +114,3 @@ if start_button:
                         expected_output="Trading signal with justification in Russian language",
                         agent=analyst
                     )
-
-                    crew = Crew(agents=[analyst], tasks=[task], verbose=True)
-                    return crew.kickoff()
-
-                except Exception as e:
-                    error_msg = str(e)
-                    # Если поймали лимит квот (429) и у нас есть другие ключи — ротируем!
-                    if ("429" in error_msg or "Quota exceeded" in error_msg) and rotator.rotate():
-                        st.warning(f"⚠️ Ключ №{rotator.index} исчерпал лимиты. Автоматически переключаюсь на ключ №{rotator.index + 1}...")
-                        continue
-                    else:
-                        raise e # Если ключи кончились или ошибка другая — пробрасываем дальше
-
-        # Перенаправляем лог терминала на сайт
-        old_stdout = sys.stdout
-        sys.stdout = StreamlitStdoutTrigger(log_area)
-        
-        try:
-            # Запускаем нашу умную функцию с защитой от блокировок
-            result = run_crew_with_retry(max_attempts=len(rotator.keys) + 1)
-            
-            sys.stdout = old_stdout
-            status_area.success("✅ Анализ успешно завершен!")
-            with result_area:
-                st.markdown("---")
-                st.markdown("### 📊 ФИНАЛЬНЫЙ ВЕРДИКТ:")
-                st.success(str(result))
-                
-        except Exception as e:
-            if 'old_stdout' in locals() and sys.stdout != old_stdout:
-                sys.stdout = old_stdout
-            status_area.error(f"❌ Произошла ошибка: {str(e)}")
