@@ -3,3 +3,5 @@ pydantic-settings
 crewai==0.100.1
 streamlit
 google-auth
+requests
+pyTelegramBotAPI
