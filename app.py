@@ -7,7 +7,7 @@ import telebot
 
 st.set_page_config(page_title="24/7 Smart AI Chatbot", page_icon="🤖")
 st.title("🤖 Универсальный ИИ-Ассистент V2")
-st.write("Сервер активен. Если бот в ТГ не отвечает на свободные темы, перезапусти приложение в панели Streamlit.")
+st.write("Сервер активен и контролирует дубликаты бота.")
 
 # 1. Чтение токенов из Secrets
 TG_TOKEN = st.secrets.get("TG_TOKEN", "7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI")
@@ -72,7 +72,7 @@ def start_light_analysis(bot):
         except: pass
         time.sleep(0.5)
         
-        # Удаляем техническое сообщение с процентами, чтобы очистить чат
+        # Удаляем техническое сообщение с процентами
         try: bot.delete_message(TG_CHAT_ID, p_msg.message_id)
         except: pass
         
@@ -80,59 +80,82 @@ def start_light_analysis(bot):
     except Exception as e:
         return f"❌ Ошибка анализа: {str(e)}"
 
-# 4. Фоновый Telegram-бот
-if "bot_loop_active_v2" not in st.session_state:
-    bot = telebot.TeleBot(TG_TOKEN)
+# 4. Хак против дубликатов: Инициализируем бота глобально на уровне кэша Streamlit
+@st.cache_resource(show_spinner=False)
+def get_global_bot():
+    # Создаем экземпляр бота один раз для всего сервера Streamlit
+    bot_instance = telebot.TeleBot(TG_TOKEN)
+    
+    # Жестко удаляем старый вебхук или зависшие сессии опроса на серверах Telegram перед стартом
+    try:
+        bot_instance.remove_webhook()
+        time.sleep(1)
+    except:
+        pass
+        
+    return bot_instance
 
-    @bot.message_handler(commands=['start', 'clear'])
-    def send_welcome(message):
-        if str(message.chat.id) == TG_CHAT_ID:
-            st.session_state.chat_history = []
-            bot.reply_to(message, "👋 Привет! Я твой обновленный ИИ-партнер.\n\n"
-                                  "• Напиши **Анализ**, чтобы проверить Биткоин с процентами.\n"
-                                  "• Пиши **любой другой текст**, чтобы просто болтать на свободные темы.")
+bot = get_global_bot()
 
-    @bot.message_handler(func=lambda message: True)
-    def handle_all_messages(message):
-        if str(message.chat.id) == TG_CHAT_ID:
-            user_text = message.text
-            user_text_lower = user_text.lower().strip()
-            
-            # Проверяем команду Анализа
-            if user_text_lower in ["анализ", "analyze", "/analyze"]:
-                report = start_light_analysis(bot)
-                bot.send_message(TG_CHAT_ID, f"📊 *Результаты анализа Биткоина:*\n\n{report}")
-                return
+# Регистрируем обработчики сообщений заново при каждом обновлении
+@bot.message_handler(commands=['start', 'clear'])
+def send_welcome(message):
+    if str(message.chat.id) == TG_CHAT_ID:
+        st.session_state.chat_history = []
+        bot.reply_to(message, "👋 Привет! Я твой обновленный ИИ-партнер.\n\n"
+                              "• Напиши **Анализ**, чтобы проверить Биткоин с процентами.\n"
+                              "• Пиши **любой другой текст**, чтобы просто болтать на свободные темы.")
 
-            # Свободное общение
-            if not VALID_GEMINI_KEY:
-                bot.send_message(TG_CHAT_ID, "❌ Добавь работающий ключ Gemini в Секреты.")
-                return
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
+    if str(message.chat.id) == TG_CHAT_ID:
+        user_text = message.text
+        user_text_lower = user_text.lower().strip()
+        
+        # Проверяем команду Анализа
+        if user_text_lower in ["анализ", "analyze", "/analyze"]:
+            report = start_light_analysis(bot)
+            bot.send_message(TG_CHAT_ID, f"📊 *Результаты анализа Биткоина:*\n\n{report}")
+            return
 
-            bot.send_chat_action(TG_CHAT_ID, 'typing')
+        # Свободное общение
+        if not VALID_GEMINI_KEY:
+            bot.send_message(TG_CHAT_ID, "❌ Добавь работающий ключ Gemini в Секреты.")
+            return
 
-            st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_text}]})
-            if len(st.session_state.chat_history) > 20:
-                st.session_state.chat_history = st.session_state.chat_history[-20:]
+        bot.send_chat_action(TG_CHAT_ID, 'typing')
 
-            ai_response = ask_gemini_chat(st.session_state.chat_history, VALID_GEMINI_KEY)
+        st.session_state.chat_history.append({"role": "user", "parts": [{"text": user_text}]})
+        if len(st.session_state.chat_history) > 20:
+            st.session_state.chat_history = st.session_state.chat_history[-20:]
 
-            if ai_response == "LIMIT_EXCEEDED":
-                bot.send_message(TG_CHAT_ID, "⚠️ Лимит запросов. Подожди минуту.")
-                st.session_state.chat_history.pop()
-            elif "ERROR" in ai_response:
-                bot.send_message(TG_CHAT_ID, "💥 Ошибка связи с ИИ. Попробуй еще раз.")
-                st.session_state.chat_history.pop()
-            else:
-                st.session_state.chat_history.append({"role": "model", "parts": [{"text": ai_response}]})
-                bot.send_message(TG_CHAT_ID, ai_response)
+        ai_response = ask_gemini_chat(st.session_state.chat_history, VALID_GEMINI_KEY)
 
-    def run_bot():
-        while True:
-            try: bot.polling(none_stop=True, timeout=60)
-            except: time.sleep(5)
+        if ai_response == "LIMIT_EXCEEDED":
+            bot.send_message(TG_CHAT_ID, "⚠️ Лимит запросов. Подожди минуту.")
+            st.session_state.chat_history.pop()
+        elif "ERROR" in ai_response:
+            bot.send_message(TG_CHAT_ID, "💥 Ошибка связи с ИИ. Попробуй еще раз.")
+            st.session_state.chat_history.pop()
+        else:
+            st.session_state.chat_history.append({"role": "model", "parts": [{"text": ai_response}]})
+            bot.send_message(TG_CHAT_ID, ai_response)
 
-    t = threading.Thread(target=run_bot)
+# Функция для непрерывного безопасного опроса
+def run_bot_safe(bot_to_run):
+    while True:
+        try:
+            # Прерываем опрос, если кто-то перехватил поток (закрывает ошибку 409)
+            bot_to_run.polling(none_stop=True, timeout=20, long_polling_timeout=20)
+        except Exception as e:
+            # Если словили конфликт 409, даем серверу остыть чуть дольше
+            time.sleep(3)
+
+# Запускаем фоновый поток, только если его еще нет в текущей глобальной сессии
+if "bot_thread_alive" not in st.session_state:
+    t = threading.Thread(target=run_bot_safe, args=(bot,))
     t.daemon = True
     t.start()
-    st.session_state.bot_loop_active_v2 = True
+    st.session_state.bot_thread_alive = True
+
+st.success("✅ Контроллер бота успешно инициализирован!")
