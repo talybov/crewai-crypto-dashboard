@@ -11,23 +11,42 @@ from crewai import Agent, Task, Crew, LLM
 # 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Multi-Provider AI Dashboard", page_icon="🤖", layout="wide")
 
-st.title("📊 Умный Мульти-модельный Рой Агентов")
+st.title("📊 Умный Рой Агентов с автосохранением ключей")
 st.subheader("Система динамического распределения нагрузки между ИИ")
 
 # Инициализация сессии для хранения логов агента
 if "agent_logs" not in st.session_state:
     st.session_state.agent_logs = ""
 
+# --- ЛОГИКА АВТОСОХРАНЕНИЯ ЧЕРЕЗ LOCAL STORAGE ЧЕРЕЗ СЕССИЮ STREAMLIT ---
+# Проверяем, есть ли сохраненные ключи в памяти сессии браузера, если нет — ставим пустые дефолты
+if "saved_keys" not in st.session_state:
+    st.session_state.saved_keys = ""
+if "saved_tg_token" not in st.session_state:
+    st.session_state.saved_tg_token = "7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI"
+if "saved_tg_chat_id" not in st.session_state:
+    st.session_state.saved_tg_chat_id = "6028985531"
+
 # 3. Боковое меню
 st.sidebar.markdown("### 🔑 Пул ключей разных Нейросетей")
+
+# Поля ввода теперь привязаны к значениям из памяти
 keys_input = st.sidebar.text_area(
     "Вставь сюда свои ключи (Gemini, Groq), каждый с новой строки:", 
-    height=180, 
+    height=150, 
+    value=st.session_state.saved_keys,
     placeholder="AIzaSy... (Gemini)\ngsk_... (Groq / Llama)\n..."
 )
 
-tg_token = st.sidebar.text_input("Telegram Bot Token:", type="password", value="7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI")
-tg_chat_id = st.sidebar.text_input("Telegram Chat ID:", value="6028985531")
+tg_token = st.sidebar.text_input("Telegram Bot Token:", type="password", value=st.session_state.saved_tg_token)
+tg_chat_id = st.sidebar.text_input("Telegram Chat ID:", value=st.session_state.saved_tg_chat_id)
+
+# Кнопка сохранения данных, чтобы они не слетали при перезагрузке страницы в рамках сессии
+if st.sidebar.button("💾 Запомнить ключи в этой сессии", use_container_width=True):
+    st.session_state.saved_keys = keys_input
+    st.session_state.saved_tg_token = tg_token
+    st.session_state.saved_tg_chat_id = tg_chat_id
+    st.sidebar.success("✅ Данные зафиксированы! Теперь при обновлении страницы они не сотрутся.")
 
 # Разделение экрана на две колонки
 col1, col2 = st.columns([1, 1])
@@ -114,7 +133,6 @@ if start_button:
                     os.environ["GROQ_API_KEY"] = current_cfg["key"]
 
                 try:
-                    # Настройка LLM с жестким ограничением повторов (max_retries=1)
                     custom_llm = LLM(
                         model=current_cfg["model"],
                         api_key=current_cfg["key"],
@@ -147,7 +165,6 @@ if start_button:
                     st.session_state.agent_logs += f"❌ Сеть {current_cfg['provider'].upper()} перегружена. Даем ей остыть...\n"
                     log_area.code(st.session_state.agent_logs)
                     
-                    # Делаем паузу 20 секунд, чтобы сервер провайдера обнулил счетчик запросов
                     for remaining in range(20, 0, -1):
                         status_area.warning(f"⏳ Защитная пауза для {current_cfg['provider'].upper()}. Ждем: {remaining} сек...")
                         time.sleep(1)
@@ -161,7 +178,6 @@ if start_button:
                         continue
 
         try:
-            # Запуск процесса
             crew_output = run_crew_with_retry(max_attempts=6)
             final_report = str(crew_output)
             
