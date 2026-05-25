@@ -106,7 +106,7 @@ def start_bot_thread():
             st.session_state.cohere_history = []
             bot_instance.reply_to(message, "👋 Привет! Умный ИИ-ассистент на связи.\n\n"
                                            "• Напиши Анализ — получишь сигнал по BTC\n"
-                                           "• Отправь голосовое — распознаю и отвечу умно\n"
+                                           "• Отправь голосовое — отвечу сразу\n"
                                            "• Любой текст — поговорим на любую тему\n"
                                            "• /clear — очистить историю диалога")
 
@@ -115,13 +115,11 @@ def start_bot_thread():
         if str(message.chat.id) != TG_CHAT_ID:
             return
         bot_instance.send_chat_action(message.chat.id, 'typing')
-        bot_instance.send_message(message.chat.id, "🎙 Распознаю...")
         text = transcribe_voice(message.voice.file_id, bot_instance)
         if text:
-            bot_instance.send_message(message.chat.id, f"🗣 Ты: {text}")
             bot_instance.send_chat_action(message.chat.id, 'typing')
             ai_response = ask_cohere_chat(text)
-            bot_instance.send_message(message.chat.id, f"🤖 {ai_response}")
+            bot_instance.send_message(message.chat.id, ai_response)
         else:
             bot_instance.send_message(message.chat.id, "❌ Не смог распознать. Попробуй ещё раз!")
 
@@ -142,7 +140,7 @@ def start_bot_thread():
             return
         bot_instance.send_chat_action(message.chat.id, 'typing')
         ai_response = ask_cohere_chat(user_text)
-        bot_instance.send_message(message.chat.id, f"🤖 {ai_response}")
+        bot_instance.send_message(message.chat.id, ai_response)
 
     def run_polling():
         while True:
