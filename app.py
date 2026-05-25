@@ -62,7 +62,8 @@ if start_button:
             backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
             llm="gemini-2.0-flash",
             verbose=True
-        )
+
+            
         )
 
         task = Task(
