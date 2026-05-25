@@ -55,8 +55,7 @@ if start_button:
 
         status_area.info("⏳ Агент просыпается и начинает анализ рынка...")
 
-        # Инициализируем агента через правильный синтаксис Gemini
-        # Инициализируем агента напрямую через правильное имя модели
+      # Инициализируем агента напрямую через правильное имя модели
         analyst = Agent(
             role="Financial Market Analyst",
             goal="Analyze cryptocurrency market trends and provide clear trading signals",
