@@ -88,7 +88,7 @@ if start_button:
         def run_crew_with_retry(max_attempts=5):
             for attempt in range(max_attempts):
                 try:
-                    # Настраиваем модель на текущем активном ключе
+                    # Настраиваем модель на текущем активном книге
                     active_key = rotator.get_current_key()
                     os.environ["GEMINI_API_KEY"] = active_key
                     
@@ -114,3 +114,21 @@ if start_button:
                         expected_output="Trading signal with justification in Russian language",
                         agent=analyst
                     )
+
+                    crew = Crew(agents=[analyst], tasks=[task], verbose=True)
+                    return crew.kickoff()
+
+                except Exception as e:
+                    error_msg = str(e)
+                    # Если поймали лимит квот (429) — делаем паузу и пробуем ротацию
+                    if "429" in error_msg or "Quota exceeded" in error_msg:
+                        status_area.warning(f"⚠️ Ключ №{rotator.index + 1} уперся в лимиты. Ждем 10 секунд для сброса квот...")
+                        time.sleep(10)  # Даем серверам Google «остыть»
+                        
+                        if rotator.rotate():
+                            st.toast(f"🔄 Переключились на ключ №{rotator.index + 1}")
+                        continue
+                    else:
+                        raise e # Прочие ошибки пробрасываем дальше
+
+        # Перенаправляем ло
