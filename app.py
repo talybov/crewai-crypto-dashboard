@@ -2,18 +2,18 @@ import os
 import sys
 import streamlit as st
 
-# Отключаем проблемную телеметрию
+# 1. Отключаем проблемный трекер OpenTelemetry до импорта CrewAI
 os.environ["OTEL_SDK_DISABLED"] = "true"
 
 from crewai import Agent, Task, Crew
 
-# Настройка стилей страницы
+# 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Crypto AI Agents Dashboard", page_icon="📊", layout="wide")
 
 st.title("📊 Рой ИИ-Агентов: Финансовый Анализ Рынка")
 st.subheader("Мониторинг работы и взаимодействия агентов в реальном времени")
 
-# Ввод API-ключа
+# 3. Боковое меню для ввода ключа
 gemini_key = st.sidebar.text_input("Введи свой GEMINI_API_KEY:", type="password")
 
 st.sidebar.markdown("""
@@ -22,6 +22,7 @@ st.sidebar.markdown("""
 В процессе работы его лог мышления будет выводиться в интерактивное окно справа.
 """)
 
+# Разделение экрана на две колонки
 col1, col2 = st.columns([1, 1])
 
 with col1:
@@ -35,58 +36,61 @@ with col2:
     st.markdown("### ⚙️ Внутренние мысли и шаги Агентов")
     log_area = st.empty()
 
-# Класс для вывода мыслей в реальном времени
+# 4. Класс для перехвата логов из терминала и вывода их на экран Streamlit
 class StreamlitStdoutTrigger:
     def __init__(self, placeholder):
         self.placeholder = placeholder
         self.text = ""
     def write(self, bytes_data):
         self.text += bytes_data
-        self.placeholder.code(self.text)
+        # Делаем вывод системных логов более читаемым
+        clean_text = self.text.replace("Entering New CrewAgentExecutor Chain", "🤖 Агент переходит к следующему шагу...")
+        self.placeholder.code(clean_text)
     def flush(self):
         pass
 
+# 5. Логика работы при нажатии на кнопку
 if start_button:
     if not gemini_key:
         st.error("❌ Сначала вставь свой API-ключ Gemini в боковое меню!")
     else:
-        # Устанавливаем ключ среды
+        # Передаем ключ в переменную окружения, которую ищет CrewAI
         os.environ["GEMINI_API_KEY"] = gemini_key
 
         status_area.info("⏳ Агент просыпается и начинает анализ рынка...")
 
-  # Инициализируем агента
+        # Инициализируем агента через правильный коннектор google_genai
         analyst = Agent(
             role="Financial Market Analyst",
             goal="Analyze cryptocurrency market trends and provide clear trading signals",
             backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
-            llm="google_genai/gemini-2.0-flash",  # <--- МЕНЯЕМ СТРОКУ СТРОГО НА ЭТУ
+            llm="google_genai/gemini-2.0-flash",
             verbose=True
         )
-            
-        )
 
+        # Формируем задачу
         task = Task(
             description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
             Учти: сейчас май 2026 года.
             Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
-            Объясни своё решение в 3-4 sentences.
+            Объясни своё решение в 3-4 предложениях.
             ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
             expected_output="Trading signal with justification in Russian language",
             agent=analyst
         )
 
+        # Собираем команду
         crew = Crew(agents=[analyst], tasks=[task], verbose=True)
 
-        # Перехватываем поток вывода терминала
+        # Перенаправляем стандартный вывод терминала в наше правое окно на сайте
         old_stdout = sys.stdout
         sys.stdout = StreamlitStdoutTrigger(log_area)
         
         try:
-            # Запускаем прямым синхронным вызовом (без asyncio)
+            # Запускаем синхронный процесс
             result = crew.kickoff()
             
-            # Возвращаем стандартный вывод
+            # Возвращаем стандартный вывод назад системе
             sys.stdout = old_stdout
             
             status_area.success("✅ Анализ успешно завершен!")
