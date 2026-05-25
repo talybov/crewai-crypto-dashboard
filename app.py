@@ -1,7 +1,9 @@
 import os
 import time
 import requests
+import threading
 import streamlit as st
+import telebot
 
 # 1. Отключаем проблемный трекер OpenTelemetry до импорта CrewAI
 os.environ["OTEL_SDK_DISABLED"] = "true"
@@ -11,24 +13,25 @@ from crewai import Agent, Task, Crew, LLM
 # 2. Настройка стилей страницы Streamlit
 st.set_page_config(page_title="Multi-Provider AI Dashboard", page_icon="🤖", layout="wide")
 
-st.title("📊 Умный Рой Агентов с автосохранением ключей")
-st.subheader("Система динамического распределения нагрузки между ИИ")
+st.title("📊 Рой Агентов с управлением через Telegram")
+st.subheader("Система запуска анализа рынка прямо из мессенджера")
 
-# Инициализация сессии для хранения логов агента
+# Настройки Telegram (Твои данные зашиты по умолчанию)
+TG_TOKEN = "7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI"
+TG_CHAT_ID = "6028985531"
+
+# Инициализация сессий и глобальных переменных
 if "agent_logs" not in st.session_state:
     st.session_state.agent_logs = ""
-
-# Проверяем, есть ли сохраненные ключи в памяти сессии браузера
 if "saved_keys" not in st.session_state:
     st.session_state.saved_keys = ""
-if "saved_tg_token" not in st.session_state:
-    st.session_state.saved_tg_token = "7735937375:AAGX2u0Ic87mw12z1hEhGlIBYqmtiu3m-gI"
-if "saved_tg_chat_id" not in st.session_state:
-    st.session_state.saved_tg_chat_id = "6028985531"
 
-# 3. Боковое меню
+# Глобальный объект для обмена логами между потоком телеграма и streamlit
+if "status_msg" not in st.session_state:
+    st.session_state.status_msg = "Ожидание запуска..."
+
+# 3. Боковое меню для ключей
 st.sidebar.markdown("### 🔑 Пул ключей разных Нейросетей")
-
 keys_input = st.sidebar.text_area(
     "Вставь сюда свои ключи (Gemini, Groq), каждый с новой строки:", 
     height=150, 
@@ -36,40 +39,33 @@ keys_input = st.sidebar.text_area(
     placeholder="AIzaSy... (Gemini)\ngsk_... (Groq / Llama)\n..."
 )
 
-tg_token = st.sidebar.text_input("Telegram Bot Token:", type="password", value=st.session_state.saved_tg_token)
-tg_chat_id = st.sidebar.text_input("Telegram Chat ID:", value=st.session_state.saved_tg_chat_id)
-
-if st.sidebar.button("💾 Запомнить ключи в этой сессии", use_container_width=True):
+if st.sidebar.button("💾 Запомнить ключи", use_container_width=True):
     st.session_state.saved_keys = keys_input
-    st.session_state.saved_tg_token = tg_token
-    st.session_state.saved_tg_chat_id = tg_chat_id
-    st.sidebar.success("✅ Данные зафиксированы!")
+    st.sidebar.success("✅ Ключи сохранены в сессии!")
 
 # Разделение экрана на две колонки
 col1, col2 = st.columns([1, 1])
-
 with col1:
     st.markdown("### 🤖 Управление Роем")
-    start_button = st.button("🚀 Запустить анализ Биткоина", use_container_width=True)
+    start_button = st.button("🚀 Запустить анализ вручную с сайта", use_container_width=True)
     
     status_area = st.empty()
+    status_area.info(st.session_state.status_msg)
     result_area = st.empty()
 
 with col2:
     st.markdown("### ⚙️ Внутренние мысли и шаги Агентов")
     log_area = st.empty()
-    log_area.code(st.session_state.agent_logs if st.session_state.agent_logs else "Ожидание запуска агента...")
+    log_area.code(st.session_state.agent_logs if st.session_state.agent_logs else "Ожидание команды на запуск...")
 
 # 4. Функция для отправки сообщений в Telegram
-def send_telegram_message(token, chat_id, text):
+def send_telegram_message(text):
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
-        response = requests.post(url, json=payload)
-        return response.status_code == 200
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        payload = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
+        requests.post(url, json=payload)
     except Exception as e:
-        st.error(f"Ошибка отправки в Telegram: {e}")
-        return False
+        print(f"Ошибка отправки в ТГ: {e}")
 
 # 5. Функция-колбэк для вывода шагов на экран
 def streamlit_callback(step_output):
@@ -106,100 +102,119 @@ class MultiProviderRotator:
             return True
         return False
 
-# 7. Логика работы при нажатии на кнопку
-if start_button:
-    st.session_state.agent_logs = "🚀 Запуск мульти-модельного роя...\n"
-    log_area.code(st.session_state.agent_logs)
-
-    api_keys = keys_input.split("\n") if keys_input else []
+# 7. ЯДРО СИСТЕМЫ: Функция запуска Роя Агентов
+def start_agent_analysis(raw_keys_string):
+    global log_area, status_area, result_area
+    
+    api_keys = raw_keys_string.split("\n") if raw_keys_string else []
     rotator = MultiProviderRotator(api_keys)
     
     if not rotator.pool:
-        st.error("❌ Сначала вставь хотя бы один API-ключ в боковое меню!")
-    else:
-        def run_crew_with_retry(max_attempts=8):
-            for attempt in range(max_attempts):
-                current_cfg = rotator.get_current()
-                status_area.info(f"⏳ Пробуем запустить шаг через шлюз [{current_cfg['provider'].upper()}]...")
-                
-                # Зачищаем старые переменные, чтобы избежать конфликтов либ под капотом
-                os.environ.pop("GEMINI_API_KEY", None)
-                os.environ.pop("GROQ_API_KEY", None)
+        return "❌ Ошибка: В пуле нет доступных API-ключей нейросетей! Добавь их на сайте."
 
-                # Прописываем строго ключ текущего провайдера
-                if current_cfg["provider"] == "gemini":
-                    os.environ["GEMINI_API_KEY"] = current_cfg["key"]
-                elif current_cfg["provider"] == "groq":
-                    os.environ["GROQ_API_KEY"] = current_cfg["key"]
+    max_attempts = 8
+    for attempt in range(max_attempts):
+        current_cfg = rotator.get_current()
+        print(f"Попытка через {current_cfg['provider'].upper()}")
+        
+        os.environ.pop("GEMINI_API_KEY", None)
+        os.environ.pop("GROQ_API_KEY", None)
 
-                try:
-                    custom_llm = LLM(
-                        model=current_cfg["model"],
-                        api_key=current_cfg["key"],
-                        max_retries=1
-                    )
-
-                    analyst = Agent(
-                        role="Financial Market Analyst",
-                        goal="Analyze cryptocurrency market trends and provide clear trading signals",
-                        backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
-                        llm=custom_llm,
-                        verbose=True,
-                        step_callback=streamlit_callback
-                    )
-
-                    task = Task(
-                        description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
-                        Учти: сейчас май 2026 года.
-                        Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
-                        Объясни своё решение в 3-4 предложениях.
-                        ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
-                        expected_output="Trading signal with justification in Russian language",
-                        agent=analyst
-                    )
-
-                    crew = Crew(agents=[analyst], tasks=[task], verbose=True)
-                    return crew.kickoff()
-
-                except Exception as e:
-                    st.session_state.agent_logs += f"❌ Сеть {current_cfg['provider'].upper()} отклонила запрос.\n"
-                    log_area.code(st.session_state.agent_logs)
-                    
-                    # Если ключ не один — переключаемся МГНОВЕННО на альтернативного провайдера
-                    if rotator.rotate():
-                        next_cfg = rotator.get_current()
-                        st.session_state.agent_logs += f"🔄 Смена провайдера! Переключаюсь на шлюз {next_cfg['provider'].upper()}...\n"
-                        log_area.code(st.session_state.agent_logs)
-                        time.sleep(1)
-                        continue
-                    else:
-                        # Если остался всего один рабочий ключ во всем пуле, даем ему паузу в 15 секунд
-                        for remaining in range(15, 0, -1):
-                            status_area.warning(f"⏳ Единственный ключ в пуле перегружен. Ожидание: {remaining} сек...")
-                            time.sleep(1)
-                        continue
+        if current_cfg["provider"] == "gemini":
+            os.environ["GEMINI_API_KEY"] = current_cfg["key"]
+        elif current_cfg["provider"] == "groq":
+            os.environ["GROQ_API_KEY"] = current_cfg["key"]
 
         try:
-            crew_output = run_crew_with_retry(max_attempts=8)
-            final_report = str(crew_output)
-            
-            if final_report.strip() == "" or final_report == "None":
-                final_report = "🤖 Все бесплатные ИИ-шлюзы сейчас заблокированы по IP со стороны Streamlit Cloud. Пожалуйста, попробуй запустить повторно через пару минут или используй платный ключ (Pay-as-you-go) в Google AI Studio, чтобы навсегда обойти ограничения общего IP."
-            
-            status_area.success("✅ Процесс завершен!")
-            
-            with result_area:
-                st.markdown("---")
-                st.markdown("### 📊 ФИНАЛЬНЫЙ ВЕРДИКТ АГЕНТА:")
-                st.info(final_report)
-            
-            if tg_token and tg_chat_id:
-                status_area.info("💬 Отправляю отчет в Telegram...")
-                telegram_text = f"📊 *Финальный вердикт ИИ-Агента:*\n\n{final_report}"
-                if send_telegram_message(tg_token, tg_chat_id, telegram_text):
-                    status_area.success("✅ Отчет успешно отправлен в Telegram!")
-                else:
-                    st.warning("⚠️ Не удалось отправить в ТГ. Проверь /start в боте.")
+            custom_llm = LLM(
+                model=current_cfg["model"],
+                api_key=current_cfg["key"],
+                max_retries=1
+            )
+
+            analyst = Agent(
+                role="Financial Market Analyst",
+                goal="Analyze cryptocurrency market trends and provide clear trading signals",
+                backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
+                llm=custom_llm,
+                verbose=True,
+                step_callback=streamlit_callback
+            )
+
+            task = Task(
+                description="""Проанализируй текущую ситуацию на рынке Bitcoin (BTC).
+                Учти: сейчас май 2026 года.
+                Дай чёткую рекомендацию: КУПИТЬ / ПРОДАТЬ / ДЕРЖАТЬ.
+                Объясни своё решение в 3-4 предложениях.
+                ВАЖНО: Ответ должен быть полностью на РУССКОМ языке.""",
+                expected_output="Trading signal with justification in Russian language",
+                agent=analyst
+            )
+
+            crew = Crew(agents=[analyst], tasks=[task], verbose=True)
+            return str(crew.kickoff())
 
         except Exception as e:
-            status_area.error(f"❌ Критическая ошибка: {str(e)}")
+            if rotator.rotate():
+                time.sleep(1)
+                continue
+            else:
+                time.sleep(5)
+                continue
+                
+    return "🤖 Все шлюзы сейчас перегружены. Попробуй запустить еще раз через пару минут."
+
+# 8. ЗАПУСК ИЗ ИНТЕРФЕЙСА САЙТА
+if start_button:
+    st.session_state.agent_logs = "🚀 Запуск мульти-модельного роя...\n"
+    log_area.code(st.session_state.agent_logs)
+    st.session_state.status_msg = "⏳ Агенты работают над анализом рынка..."
+    status_area.info(st.session_state.status_msg)
+    
+    report = start_agent_analysis(keys_input)
+    
+    st.session_state.status_msg = "✅ Процесс успешно завершен!"
+    status_area.success(st.session_state.status_msg)
+    result_area.info(report)
+    send_telegram_message(f"📊 *Финальный вердикт ИИ-Агента (Запущено с сайта):*\n\n{report}")
+
+
+# 9. ФОНОВЫЙ ТЕЛЕГРАМ-БОТ (Слушатель команд)
+# Используем синглтон, чтобы поток запускался строго один раз на сервере
+if "bot_thread_started" not in st.session_state:
+    bot = telebot.TeleBot(TG_TOKEN)
+
+    @bot.message_handler(commands=['start', 'help'])
+    def send_welcome(message):
+        if str(message.chat.id) == TG_CHAT_ID:
+            bot.reply_to(message, "👋 Привет! Я твой торговый ИИ-агент.\n\nНапиши мне слово **Анализ** или отправь команду `/analyze`, и я запущу рой агентов на сервере для проверки Биткоина!")
+
+    @bot.message_handler(func=lambda message: True)
+    def handle_all_messages(message):
+        # Реагируем только на твои сообщения для безопасности
+        if str(message.chat.id) == TG_CHAT_ID:
+            user_text = message.text.lower()
+            if "анализ" in user_text or "analyze" in user_text or user_text == "/analyze":
+                bot.send_message(TG_CHAT_ID, "🚀 Запрос принят! Запускаю рой агентов на сервере. Это займет некоторое время, собираю мысли...")
+                
+                # Запускаем сборку отчета (берем текущие сохраненные ключи из сессии)
+                report = start_agent_analysis(st.session_state.saved_keys)
+                
+                # Отправляем результат обратно в ТГ
+                bot.send_message(TG_CHAT_ID, f"📊 *Анализ Биткоина готов!*\n\n{report}")
+            else:
+                bot.send_message(TG_CHAT_ID, "❓ Я умею выполнять только анализ. Напиши слово **Анализ**, чтобы запустить процесс.")
+
+    # Функция для непрерывного фонового опроса Telegram
+    def run_bot():
+        while True:
+            try:
+                bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
+            except Exception as e:
+                time.sleep(5)
+
+    # Запускаем бота в отдельном независимом потоке Python
+    t = threading.Thread(target=run_bot)
+    t.daemon = True
+    t.start()
+    st.session_state.bot_thread_started = True
