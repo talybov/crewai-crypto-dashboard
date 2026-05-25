@@ -17,8 +17,9 @@ TG_CHAT_ID = str(st.secrets.get("TG_CHAT_ID", "")).strip()
 OR_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
 COHERE_KEY = st.secrets.get("COHERE_API_KEY", "")
 
-if "cohere_history" not in st.session_state:
-    st.session_state.cohere_history = []
+# Глобальная история — работает в потоке
+cohere_history = []
+history_lock = threading.Lock()
 
 
 def ask_openrouter_analysis():
@@ -40,14 +41,17 @@ def ask_openrouter_analysis():
 
 
 def ask_cohere_chat(user_message):
+    global cohere_history
     if not COHERE_KEY:
         return "❌ Нет COHERE_API_KEY!"
     url = "https://api.cohere.com/v1/chat"
     headers = {"Authorization": f"Bearer {COHERE_KEY}", "Content-Type": "application/json"}
+    with history_lock:
+        current_history = list(cohere_history)
     payload = {
         "model": "command-r-plus",
         "message": user_message,
-        "chat_history": st.session_state.cohere_history,
+        "chat_history": current_history,
         "preamble": """Ты — умный универсальный ИИ-ассистент. Твоя задача — давать полезные, умные и развёрнутые ответы на любые вопросы.
 
 Правила:
@@ -56,18 +60,17 @@ def ask_cohere_chat(user_message):
 - Если вопрос про рынок или крипту — давай конкретный анализ
 - Если просят совет — давай чёткий совет с объяснением
 - Если просто общение — поддерживай разговор интересно
-- Никогда не говори что ты просто переводишь или повторяешь
 - Всегда добавляй свою мысль, мнение или полезную информацию к ответу"""
     }
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=25)
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
-            result = response.json()
-            ai_text = result.get("text", "")
-            st.session_state.cohere_history.append({"role": "USER", "message": user_message})
-            st.session_state.cohere_history.append({"role": "CHATBOT", "message": ai_text})
-            if len(st.session_state.cohere_history) > 20:
-                st.session_state.cohere_history = st.session_state.cohere_history[-20:]
+            ai_text = response.json().get("text", "")
+            with history_lock:
+                cohere_history.append({"role": "USER", "message": user_message})
+                cohere_history.append({"role": "CHATBOT", "message": ai_text})
+                if len(cohere_history) > 20:
+                    cohere_history = cohere_history[-20:]
             return ai_text
         else:
             return f"⚠️ Ошибка Cohere (Код {response.status_code})"
@@ -94,6 +97,7 @@ def transcribe_voice(file_id, bot_instance):
 
 
 def start_bot_thread():
+    global cohere_history
     bot_instance = telebot.TeleBot(TG_TOKEN)
     try:
         bot_instance.remove_webhook()
@@ -103,7 +107,8 @@ def start_bot_thread():
     @bot_instance.message_handler(commands=['start', 'clear'])
     def send_welcome(message):
         if str(message.chat.id) == TG_CHAT_ID:
-            st.session_state.cohere_history = []
+            with history_lock:
+                cohere_history.clear()
             bot_instance.reply_to(message, "👋 Привет! Умный ИИ-ассистент на связи.\n\n"
                                            "• Напиши Анализ — получишь сигнал по BTC\n"
                                            "• Отправь голосовое — отвечу сразу\n"
@@ -158,7 +163,6 @@ if TG_TOKEN:
     if "bot_started" not in st.session_state:
         start_bot_thread()
         st.session_state.bot_started = True
-
     st.success("✅ Умный бот запущен! Голосовые поддерживаются 🎙")
 else:
     st.error("❌ Не найден TG_TOKEN в Secrets!")
