@@ -10,8 +10,9 @@ import io
 
 st.set_page_config(page_title="24/7 Dual AI Bot", page_icon="🤖")
 st.title("🤖 Бессмертный ИИ-Ассистент")
+st.write("Крипто-платформа управления ИИ-агентами активна.")
 
-# Чтение токенов из Secrets
+# 1. Чтение токенов из Secrets
 TG_TOKEN = st.secrets.get("TG_TOKEN", "")
 TG_CHAT_ID = str(st.secrets.get("TG_CHAT_ID", "")).strip()
 OR_KEY = st.secrets.get("OPENROUTER_API_KEY", "")
@@ -25,6 +26,8 @@ else:
     
 history_lock = threading.Lock()
 
+
+# 2. ПРЯМОЙ запрос к Cohere для свободного общения и ведения проекта
 def ask_cohere_chat(user_message):
     global cohere_history
     if not COHERE_KEY:
@@ -35,11 +38,22 @@ def ask_cohere_chat(user_message):
     with history_lock:
         current_history = list(cohere_history)
         
+    # СИСТЕМНЫЙ ПРОМПТ ДЛЯ КРИПТО-ПЛАТФОРМЫ (Память бота)
+    system_preamble = (
+        "Ты — главный ИИ-инженер, крипто-аналитик и партнер пользователя. "
+        "Вы вместе разрабатываете продвинутую экосистему ИИ-агентов для мониторинга рынка и трейдинга. "
+        "Ваша цель — создать систему, которая анализирует разные монеты (Bitcoin, Ethereum, Solana и др.). "
+        "Архитектура проекта включает: аналитику через OpenRouter, свободное общение и обработку голоса через Cohere, "
+        "а в следующих шагах — подключение реальных данных через CoinGecko API и модуль paper trading (виртуальный торговый агент). "
+        "Отвечай всегда на русском языке, профессионально, кратко и емко, как вовлеченный коллега-разработчик. "
+        "Ты помнишь все планы по интеграции CoinGecko, расширению списка монет (ETH, SOL) и симуляции сделок."
+    )
+        
     payload = {
         "model": "command-r-08-2024",
         "message": user_message,
         "chat_history": current_history,
-        "preamble": "Ты — умный универсальный ИИ-ассистент. Отвечай на русском языке, дружелюбно, развёрнуто и по делу. Всегда добавляй своё мнение или полезную информацию."
+        "preamble": system_preamble
     }
     try:
         print(f"[SYSTEM] Отправка запроса в Cohere...")
@@ -59,6 +73,8 @@ def ask_cohere_chat(user_message):
         print(f"[CRASH] Ошибка сети Cohere: {str(e)}")
         return f"💥 Исключение Cohere: {str(e)}"
 
+
+# 3. Запрос к OpenRouter (ЭКСПРЕСС-АНАЛИЗ BTC)
 def ask_openrouter_analysis():
     if not OR_KEY:
         return "❌ Нет OPENROUTER_API_KEY"
@@ -77,6 +93,8 @@ def ask_openrouter_analysis():
     except Exception as e:
         return f"💥 Ошибка OpenRouter: {str(e)}"
 
+
+# 4. Модуль распознавания голоса
 def transcribe_voice(file_id, bot_instance):
     try:
         file_info = bot_instance.get_file(file_id)
@@ -94,7 +112,8 @@ def transcribe_voice(file_id, bot_instance):
         print(f"[VOICE ERROR] {str(e)}")
         return None
 
-# ГЛОБАЛЬНЫЙ ЗАПУСК БОТА ЧЕРЕЗ КЭШ СЕРВЕРА (Защита от засыпания и дубликатов)
+
+# 5. ГЛОБАЛЬНЫЙ ЗАПУСК БОТА ЧЕРЕЗ КЭШ СЕРВЕРА (Защита от засыпания)
 @st.cache_resource(show_spinner=False)
 def init_and_run_bot():
     bot_instance = telebot.TeleBot(TG_TOKEN)
@@ -111,11 +130,11 @@ def init_and_run_bot():
             with history_lock:
                 cohere_history.clear()
             bot_instance.send_message(message.chat.id,
-                "👋 Привет! Я переведён на стабильный серверный режим.\n\n"
-                "• Напиши 'Анализ' — сигнал по BTC\n"
-                "• Отправь Голосовое — отвечу текстом\n"
-                "• Любой текст — свободное общение\n"
-                "• /clear — очистить историю диалога")
+                "👋 Привет! Твой крипто-архитектор на связи.\n\n"
+                "• Напиши 'Анализ' — быстрый сигнал по BTC\n"
+                "• Спроси 'Как дела у агентов' — текущий статус разработки\n"
+                "• Отправь Голосовое или текст — мы обсуждаем код и монеты\n"
+                "• /clear — очистить историю контекста")
 
     @bot_instance.message_handler(content_types=['voice'])
     def handle_voice(message):
@@ -126,6 +145,13 @@ def init_and_run_bot():
             text = transcribe_voice(message.voice.file_id, bot_instance)
             if text:
                 print(f"[VOICE] Распознано: {text}")
+                user_text_lower = text.lower().strip()
+                
+                # Проверка фразы про агентов внутри голосового
+                if "как дела у агентов" in user_text_lower or "статус агентов" in user_text_lower:
+                    send_status_report(bot_instance, message.chat.id)
+                    return
+                    
                 ai_response = ask_cohere_chat(text)
                 bot_instance.send_message(message.chat.id, ai_response)
             else:
@@ -141,6 +167,7 @@ def init_and_run_bot():
             user_text = message.text or ""
             user_text_lower = user_text.lower().strip()
             
+            # 1. Триггер на Анализ Биткоина
             if user_text_lower in ["анализ", "analyze", "/analyze"]:
                 p_msg = bot_instance.send_message(message.chat.id, "⏳ Анализирую рынок...")
                 report = ask_openrouter_analysis()
@@ -149,13 +176,31 @@ def init_and_run_bot():
                 bot_instance.send_message(message.chat.id, f"📊 Анализ Bitcoin:\n\n{report}")
                 return
                 
+            # 2. Триггер на Статус Агентов
+            if "как дела у агентов" in user_text_lower or "статус агентов" in user_text_lower:
+                send_status_report(bot_instance, message.chat.id)
+                return
+                
+            # 3. Свободное общение через Cohere
             bot_instance.send_chat_action(message.chat.id, 'typing')
             ai_response = ask_cohere_chat(user_text)
             bot_instance.send_message(message.chat.id, ai_response)
         except Exception as e:
             bot_instance.send_message(message.chat.id, f"💥 Ошибка: {str(e)}")
 
-    # Запуск бесконечного цикла в демоническом потоке
+    # Вспомогательная функция вывода отчета
+    def send_status_report(bot_obj, chat_id):
+        status_report = (
+            "🤖 **Отчёт по крипто-экосистеме ИИ-агентов:**\n\n"
+            "1. 📈 **Агент базового анализа рынка (OpenRouter):** Активен. Собирает экспресс-отчеты по BTC через Gemini 2.0 Flash.\n"
+            "2. 🗣 **Командный интерфейс (Cohere):** Стабилен на модели command-r-08-2024. Текст и голос обрабатываются без задержек.\n"
+            "3. 📊 **Модуль мульти-монет (В планах):** Готовимся расширить пул (добавить ETH, SOL) и подключить прямые данные через CoinGecko API.\n"
+            "4. 💼 **Торговый агент (Paper Trading):** Следующий крупный этап. Будет вести симуляцию сделок и считать виртуальный профит.\n\n"
+            "⚡ *Инфраструктура готова к расширению аналитики. С какой монеты начнем интеграцию реальных данных — ETH или SOL?*"
+        )
+        bot_obj.send_message(chat_id, status_report)
+
+    # Запуск бесконечного цикла polling в потоке
     def run_polling():
         print("[SYSTEM] Фоновый поток бота успешно запущен!")
         while True:
@@ -170,7 +215,8 @@ def init_and_run_bot():
     t.start()
     return bot_instance
 
-# Главный пуск
+
+# Главный пуск приложения Streamlit
 if TG_TOKEN:
     bot = init_and_run_bot()
     st.success("✅ Бот успешно привязан к серверу и работает 24/7!")
