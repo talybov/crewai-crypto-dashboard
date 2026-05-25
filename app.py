@@ -55,14 +55,14 @@ if start_button:
 
         status_area.info("⏳ Агент просыпается и начинает анализ рынка...")
 
-   # Инициализируем агента
+  # Инициализируем агента
         analyst = Agent(
             role="Financial Market Analyst",
             goal="Analyze cryptocurrency market trends and provide clear trading signals",
             backstory="You are an experienced crypto trader. You analyze markets and give clear signals.",
-            llm="gemini-2.0-flash",
+            llm="google_genai/gemini-2.0-flash",  # <--- МЕНЯЕМ СТРОКУ СТРОГО НА ЭТУ
             verbose=True
-
+        )
             
         )
 
