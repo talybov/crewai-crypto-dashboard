@@ -49,7 +49,7 @@ if not os.path.exists("bot_memory.json"):
     }
     with open("bot_memory.json", "w", encoding="utf-8") as f:
         json.dump(initial_data, f, ensure_ascii=False)
-hile True:
+while True:
     with placeholder.container():
         # Добавляем индикатор времени, чтобы видеть, что сайт «дышит»
         st.write(f"⏰ Последнее обновление: {datetime.datetime.now().strftime('%H:%M:%S')}")
