@@ -37,6 +37,7 @@ def get_agent_result(role, previous_data):
     return previous_data
 
 # --- БОТ ---
+# --- ОБНОВЛЕННАЯ ЛОГИКА БОТА ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
 
@@ -44,6 +45,31 @@ def run_bot():
     def handle_message(m):
         with open(FILES["agents"], "r+", encoding="utf-8") as fa:
             data = json.load(fa)
+            
+            current_context = m.text
+            roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
+            
+            # Очистим историю перед новой задачей (чтобы не было "колбас")
+            for agent in roles:
+                data["agents"][agent]["history"] = []
+            
+            for agent in roles:
+                data["agents"][agent]["status"] = "В работе..."
+                # Агент получает ВЕСЬ контекст, но возвращает только СВОЙ вывод
+                result = get_agent_result(agent, current_context)
+                
+                # В историю пишем только то, что сделал конкретный агент
+                data["agents"][agent]["history"].append(f"🔹 {result}")
+                
+                # Обновляем контекст для следующего
+                current_context = result 
+                data["agents"][agent]["status"] = "Свободен"
+            
+            fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
+        
+        bot.reply_to(m, "🤖 Рой завершил анализ. Результаты на панели!")
+
+    bot.polling(none_stop=True)
             
             # Запуск логической эстафеты
             current_context = m.text
