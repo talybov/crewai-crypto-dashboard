@@ -4,6 +4,7 @@ import os
 import telebot
 import threading
 import random
+import time
 
 # --- КОНФИГУРАЦИЯ ---
 FILES = {
@@ -18,7 +19,6 @@ def init_data():
             json.dump({"tasks": []}, f)
     
     if not os.path.exists(FILES["agents"]):
-        # Расширяем состав роя до 5 специалистов
         data = {
             "agents": {
                 "Аналитик": {"status": "💤 Спит", "role": "Анализ рынка и поиск паттернов"},
@@ -33,16 +33,16 @@ def init_data():
 
 init_data()
 
-# --- ЛОГИКА РАССУЖДЕНИЙ ---
+# --- ЛОГИКА АГЕНТОВ (CoT) ---
 def agent_think(role, task):
     responses = {
-        "Анализ рынка": "1. Выгрузка исторических данных. 2. Технический анализ. 3. Формирование прогноза.",
-        "Координатор": "1. Оценка приоритета. 2. Распределение нагрузки. 3. Мониторинг исполнения.",
-        "Мониторинг Twitter и новостей": "1. Скрапинг ленты. 2. Анализ тональности новостей. 3. Отчет по хайпу.",
-        "Анализ рисков и стоп-лоссов": "1. Оценка волатильности. 2. Расчет уровней ликвидации. 3. Настройка стопов.",
-        "Исполнение кода и автоматизация": "1. Подготовка скриптов. 2. Прогон через песочницу. 3. Деплой на сервер."
+        "Анализ рынка": "1. Сбор исторических данных по BTC. 2. Расчет индикаторов. 3. Вывод торгового сигнала.",
+        "Координатор": "1. Анализ очереди задач. 2. Оценка приоритетов. 3. Распределение ресурсов.",
+        "Мониторинг Twitter и новостей": "1. Скрапинг потока данных. 2. Анализ тональности новостей. 3. Отчет по хайпу.",
+        "Анализ рисков и стоп-лоссов": "1. Оценка текущей волатильности. 2. Расчет риск-менеджмента. 3. Установка лимитов.",
+        "Исполнение кода и автоматизация": "1. Написание скриптов. 2. Тест в песочнице. 3. Деплой на production."
     }
-    return responses.get(role, "1. Изучение задачи. 2. Выполнение. 3. Отчет.")
+    return responses.get(role, "1. Изучение задачи. 2. Исполнение. 3. Рефлексия.")
 
 # --- БОТ ---
 def run_bot():
@@ -56,7 +56,7 @@ def run_bot():
             data = json.load(f)
             data["tasks"].append({"task": task_text})
             f.seek(0); f.truncate(); json.dump(data, f, ensure_ascii=False, indent=4)
-        bot.reply_to(m, "✅ Задача в очереди!")
+        bot.reply_to(m, f"✅ Задача '{task_text}' принята в работу!")
 
     @bot.message_handler(commands=['work'])
     def work_agent(m):
@@ -68,7 +68,7 @@ def run_bot():
             agents = json.load(fa)
             
             if not tasks["tasks"]:
-                bot.reply_to(m, "❌ Нет задач!")
+                bot.reply_to(m, "❌ Очередь пуста!")
                 return
             
             found = False
@@ -90,6 +90,7 @@ def run_bot():
 
     bot.polling(none_stop=True)
 
+# Запуск
 if "bot_started" not in st.session_state:
     if "TG_TOKEN" in st.secrets:
         threading.Thread(target=run_bot, daemon=True).start()
@@ -101,5 +102,4 @@ col1, col2 = st.columns(2)
 with open(FILES["agents"], "r", encoding="utf-8") as f: col1.subheader("🤖 Агенты"); col1.json(json.load(f))
 with open(FILES["tasks"], "r", encoding="utf-8") as f: col2.subheader("📝 Очередь"); col2.json(json.load(f))
 
-import time
 time.sleep(1); st.rerun()
