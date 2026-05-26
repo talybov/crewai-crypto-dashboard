@@ -51,7 +51,8 @@ def setup_initial_agents():
         }
         with open(FILES["agents"], "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-
+# <--- Эта строка должна быть ровно здесь (без пробелов в начале)
+setup_initial_agents()
 # Вызываем функцию сразу при запуске
 setup_initial_agents()
         }
