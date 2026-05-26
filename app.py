@@ -12,7 +12,6 @@ FILES = {
     "tasks": os.path.join(os.getcwd(), "tasks_log.json")
 }
 
-# --- ЯДРО СИСТЕМЫ ---
 def init_storage():
     if not os.path.exists(FILES["tasks"]):
         with open(FILES["tasks"], "w", encoding="utf-8") as f:
@@ -20,10 +19,21 @@ def init_storage():
             
 def setup_initial_agents():
     if not os.path.exists(FILES["agents"]):
+        # Роли агентов как в видео: узкая специализация
         data = {
             "agents": {
-                "Аналитик": {"status": "💤 Спит", "task": "Ожидание"},
-                "Менеджер": {"status": "💤 Спит", "task": "Ожидание"}
+                "Аналитик": {
+                    "status": "💤 Спит", 
+                    "task": "Нет", 
+                    "role": "Анализ исторических данных и поиск паттернов",
+                    "thought_process": ""
+                },
+                "Менеджер": {
+                    "status": "💤 Спит", 
+                    "task": "Нет", 
+                    "role": "Управление очередью задач и координация",
+                    "thought_process": ""
+                }
             }
         }
         with open(FILES["agents"], "w", encoding="utf-8") as f:
@@ -36,28 +46,17 @@ def get_data(key):
 init_storage()
 setup_initial_agents()
 
-# --- ИНТЕРФЕЙС ---
-st.set_page_config(page_title="Swarm Control", layout="wide")
-st.title("🛰 Центр Управления Роем")
-placeholder = st.empty()
+# --- ЛОГИКА АГЕНТОВ ---
+def agent_think(role, task):
+    """Имитация цепочки размышлений агента"""
+    if "Анализ" in role:
+        return f"1. Сбор данных по задаче: {task}. 2. Проведение бэктеста. 3. Формирование торгового сигнала."
+    return f"1. Оценка приоритета задачи: {task}. 2. Распределение ресурсов. 3. Контроль исполнения."
 
 # --- БОТ ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
     
-    @bot.message_handler(commands=['start'])
-    def start(m):
-        bot.reply_to(m, "Рой на связи. /add [задача] — добавить, /work [агент] — разбудить, /report [агент] — отчет.")
-
-    @bot.message_handler(commands=['add'])
-    def add_task(m):
-        task_text = m.text.replace("/add", "").strip()
-        data = get_data("tasks")
-        data["tasks"].append({"task": task_text, "status": "Ожидает"})
-        with open(FILES["tasks"], "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        bot.reply_to(m, "✅ Задача добавлена!")
-
     @bot.message_handler(commands=['work'])
     def work_agent(m):
         target_name = m.text.replace("/work", "").strip()
@@ -68,45 +67,44 @@ def run_bot():
         
         if found_name and tasks_data["tasks"]:
             task = tasks_data["tasks"].pop(0)
-            agents_data["agents"][found_name]["status"] = "🚀 Работает"
-            agents_data["agents"][found_name]["task"] = task["task"]
+            role = agents_data["agents"][found_name]["role"]
+            
+            # Агент "думает" перед работой
+            plan = agent_think(role, task["task"])
+            
+            agents_data["agents"][found_name].update({
+                "status": "🚀 Работает",
+                "task": task["task"],
+                "thought_process": plan
+            })
             
             with open(FILES["agents"], "w", encoding="utf-8") as f:
                 json.dump(agents_data, f, ensure_ascii=False, indent=4)
             with open(FILES["tasks"], "w", encoding="utf-8") as f:
                 json.dump(tasks_data, f, ensure_ascii=False, indent=4)
                 
-            bot.reply_to(m, f"✅ {found_name} взял задачу: {task['task']}")
+            bot.reply_to(m, f"🧠 {found_name} (Роль: {role})\nПлан действий:\n{plan}")
         else:
-            bot.reply_to(m, "❌ Агент не найден или нет задач в логе!")
-
-    @bot.message_handler(commands=['report'])
-    def report_agent(m):
-        target_name = m.text.replace("/report", "").strip()
-        data = get_data("agents")
-        
-        if any(n.lower() == target_name.lower() for n in data["agents"]):
-            bot.reply_to(m, f"📊 Отчет от {target_name}:\nСитуация под контролем, данные по BTC/ETH обновлены.")
-        else:
-            bot.reply_to(m, "❌ Агент не найден.")
+            bot.reply_to(m, "❌ Агент не найден или задач нет.")
 
     bot.polling(none_stop=True)
 
-# Запуск бота с защитой от дублей
+# Запуск бота (с защитой от дублей)
 if "bot_started" not in st.session_state:
     if "TG_TOKEN" in st.secrets:
         threading.Thread(target=run_bot, daemon=True).start()
         st.session_state.bot_started = True
 
-# --- ЦИКЛ ОБНОВЛЕНИЯ ---
+# --- ИНТЕРФЕЙС ---
+st.set_page_config(layout="wide")
+st.title("🛰 Центр Управления Роем")
+placeholder = st.empty()
+
 while True:
     with placeholder.container():
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🤖 Агенты")
-            st.json(get_data("agents"))
-        with col2:
-            st.subheader("📝 Лог задач")
-            st.json(get_data("tasks"))
+        st.subheader("🤖 Активные агенты и их мысли")
+        st.json(get_data("agents"))
+        st.subheader("📝 Очередь задач")
+        st.json(get_data("tasks"))
     time.sleep(1)
     st.rerun()
