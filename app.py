@@ -6,26 +6,19 @@ import threading
 import random
 import time
 
-# --- КОНФИГУРАЦИЯ ---
-FILES = {
-    "agents": "bot_memory.json",
-    "tasks": "tasks_log.json"
-}
+FILES = {"agents": "bot_memory.json", "tasks": "tasks_log.json"}
 
-# --- ИНИЦИАЛИЗАЦИЯ РОЯ ---
+# --- ИНИЦИАЛИЗАЦИЯ С ОБЩЕЙ ПАМЯТЬЮ ---
 def init_data():
     if not os.path.exists(FILES["tasks"]):
         with open(FILES["tasks"], "w", encoding="utf-8") as f:
             json.dump({"tasks": []}, f)
-    
     if not os.path.exists(FILES["agents"]):
         data = {
             "agents": {
-                "Аналитик": {"status": "💤 Спит", "role": "Анализ рынка и поиск паттернов"},
-                "Менеджер": {"status": "💤 Спит", "role": "Координатор очереди задач"},
-                "Исследователь": {"status": "💤 Спит", "role": "Мониторинг Twitter и новостей"},
-                "Риск-менеджер": {"status": "💤 Спит", "role": "Анализ рисков и стоп-лоссов"},
-                "Разработчик": {"status": "💤 Спит", "role": "Исполнение кода и автоматизация"}
+                "Аналитик": {"status": "💤 Спит", "role": "Аналитик", "history": []},
+                "Менеджер": {"status": "💤 Спит", "role": "Координатор", "history": []},
+                "Риск-менеджер": {"status": "💤 Спит", "role": "Риск", "history": []}
             }
         }
         with open(FILES["agents"], "w", encoding="utf-8") as f:
@@ -33,30 +26,14 @@ def init_data():
 
 init_data()
 
-# --- ЛОГИКА АГЕНТОВ (CoT) ---
-def agent_think(role, task):
-    responses = {
-        "Анализ рынка": "1. Сбор исторических данных по BTC. 2. Расчет индикаторов. 3. Вывод торгового сигнала.",
-        "Координатор": "1. Анализ очереди задач. 2. Оценка приоритетов. 3. Распределение ресурсов.",
-        "Мониторинг Twitter и новостей": "1. Скрапинг потока данных. 2. Анализ тональности новостей. 3. Отчет по хайпу.",
-        "Анализ рисков и стоп-лоссов": "1. Оценка текущей волатильности. 2. Расчет риск-менеджмента. 3. Установка лимитов.",
-        "Исполнение кода и автоматизация": "1. Написание скриптов. 2. Тест в песочнице. 3. Деплой на production."
-    }
-    return responses.get(role, "1. Изучение задачи. 2. Исполнение. 3. Рефлексия.")
+# --- ЛОГИКА «ОБЩЕНИЯ» И «РАЗВИТИЯ» ---
+def agent_communicate(sender, receiver, task_context):
+    """Агент передает эстафету другому"""
+    return f"[{sender} -> {receiver}]: Задача '{task_context}' обработана. Требуется проверка рисков."
 
 # --- БОТ ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
-
-    @bot.message_handler(commands=['add'])
-    def add_task(m):
-        task_text = m.text.replace("/add", "").strip()
-        if not task_text: return
-        with open(FILES["tasks"], "r+", encoding="utf-8") as f:
-            data = json.load(f)
-            data["tasks"].append({"task": task_text})
-            f.seek(0); f.truncate(); json.dump(data, f, ensure_ascii=False, indent=4)
-        bot.reply_to(m, f"✅ Задача '{task_text}' принята в работу!")
 
     @bot.message_handler(commands=['work'])
     def work_agent(m):
@@ -68,21 +45,24 @@ def run_bot():
             agents = json.load(fa)
             
             if not tasks["tasks"]:
-                bot.reply_to(m, "❌ Очередь пуста!")
+                bot.reply_to(m, "❌ Нет задач!")
                 return
             
-            found = False
-            for name in agents["agents"]:
-                if name.lower() == target.lower():
-                    task = tasks["tasks"].pop(0)
-                    plan = agent_think(agents["agents"][name]["role"], task["task"])
-                    
-                    agents["agents"][name].update({"status": "🚀 Работает", "task": task["task"], "thought_process": plan})
-                    found = True
-                    bot.reply_to(m, f"✅ {name} (Роль: {agents['agents'][name]['role']})\n\n🧠 ПЛАН:\n{plan}")
-                    break
+            task = tasks["tasks"].pop(0)
+            name = next((n for n in agents["agents"] if n.lower() == target.lower()), None)
             
-            if found:
+            if name:
+                # Агент работает и «пишет» в историю для коллеги
+                reflection = f"Анализ завершен, передаю в отдел рисков."
+                agents["agents"][name]["history"].append(f"Выполнил: {task['task']}. Итог: {reflection}")
+                
+                # Автоматическая передача «эстафеты»
+                next_agent = "Риск-менеджер" if name != "Риск-менеджер" else "Менеджер"
+                communication = agent_communicate(name, next_agent, task['task'])
+                
+                bot.reply_to(m, f"✅ {name} поработал.\n🧠 Мысли: {reflection}\n📢 {communication}")
+                
+                # Сохранение
                 ft.seek(0); ft.truncate(); json.dump(tasks, ft, ensure_ascii=False, indent=4)
                 fa.seek(0); fa.truncate(); json.dump(agents, fa, ensure_ascii=False, indent=4)
             else:
@@ -90,16 +70,12 @@ def run_bot():
 
     bot.polling(none_stop=True)
 
-# Запуск
+# ... (запуск и интерфейс как в прошлый раз)
 if "bot_started" not in st.session_state:
     if "TG_TOKEN" in st.secrets:
         threading.Thread(target=run_bot, daemon=True).start()
         st.session_state.bot_started = True
 
-# --- ИНТЕРФЕЙС ---
 st.title("🛰 Центр Управления Роем")
-col1, col2 = st.columns(2)
-with open(FILES["agents"], "r", encoding="utf-8") as f: col1.subheader("🤖 Агенты"); col1.json(json.load(f))
-with open(FILES["tasks"], "r", encoding="utf-8") as f: col2.subheader("📝 Очередь"); col2.json(json.load(f))
-
+with open(FILES["agents"], "r", encoding="utf-8") as f: st.json(json.load(f))
 time.sleep(1); st.rerun()
