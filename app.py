@@ -5,6 +5,7 @@ import os
 import threading
 import telebot
 import time  # <--- ВОТ ЭТОГО СЛОВА НЕ ХВАТАЕТ
+import datetime # Не забудь добавить этот импорт в начало файла
 # --- 1. КОНФИГУРАЦИЯ ---
 FILES = {
     "agents": "bot_memory.json",
@@ -48,8 +49,11 @@ if not os.path.exists("bot_memory.json"):
     }
     with open("bot_memory.json", "w", encoding="utf-8") as f:
         json.dump(initial_data, f, ensure_ascii=False)
-while True:
+hile True:
     with placeholder.container():
+        # Добавляем индикатор времени, чтобы видеть, что сайт «дышит»
+        st.write(f"⏰ Последнее обновление: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -59,6 +63,9 @@ while True:
         with col2:
             st.subheader("📝 Лог задач")
             st.json(get_data("tasks"))
+    
+    time.sleep(1) # Обновляем каждую секунду
+    st.rerun()
     
     # Пауза 3 секунды перед обновлением данных
     time.sleep(3)
