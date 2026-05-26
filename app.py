@@ -10,7 +10,7 @@ st.set_page_config(page_title="Multi-Agent Swarm", layout="wide")
 
 FILES = {"agents": "bot_memory.json"}
 
-# --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ ---
+# --- ИНИЦИАЛИЗАЦИЯ ---
 def init_data():
     if not os.path.exists(FILES["agents"]):
         data = {
@@ -27,17 +27,16 @@ def init_data():
 
 init_data()
 
-# --- ЛОГИКА ЭКСПЕРТИЗЫ (Цепочка эстафеты) ---
+# --- ЛОГИКА ЭКСПЕРТИЗЫ ---
 def get_agent_result(role, previous_data):
-    if role == "Исследователь": return f"Исследование: '{previous_data}' - найдены бычьи сигналы."
-    if role == "Аналитик": return f"Анализ: '{previous_data}' - поддержка на $140."
-    if role == "Риск-менеджер": return f"Риски: '{previous_data}' - стоп-лосс на $135."
-    if role == "Разработчик": return f"Код: '{previous_data}' - бот настроен."
-    if role == "Менеджер": return f"Итог: '{previous_data}' - Сделка одобрена."
+    if role == "Исследователь": return f"Сбор данных: '{previous_data}' - найдены бычьи сигналы."
+    if role == "Аналитик": return f"Тех. анализ: данные подтверждают поддержку на $140."
+    if role == "Риск-менеджер": return f"Аудит рисков: стоп-лосс на $135 (безопасно)."
+    if role == "Разработчик": return f"Автоматизация: скрипт для сделки готов."
+    if role == "Менеджер": return f"Итоговое решение: сделка одобрена."
     return previous_data
 
 # --- БОТ ---
-# --- ОБНОВЛЕННАЯ ЛОГИКА БОТА ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
 
@@ -46,71 +45,29 @@ def run_bot():
         with open(FILES["agents"], "r+", encoding="utf-8") as fa:
             data = json.load(fa)
             
-            current_context = m.text
             roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
             
-            # Очистим историю перед новой задачей
+            # Очистка истории перед новым анализом
             for agent in roles:
                 data["agents"][agent]["history"] = []
-            
-            for agent in roles:
                 data["agents"][agent]["status"] = "В работе..."
-                result = get_agent_result(agent, current_context)
-                
-                # В историю пишем только то, что сделал конкретный агент
-                data["agents"][agent]["history"].append(f"🔹 {result}")
-                
-                # Обновляем контекст для следующего
-                current_context = result 
-                data["agents"][agent]["status"] = "Свободен"
             
-            fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
-        
-        bot.reply_to(m, "🤖 Рой завершил анализ. Результаты на панели!")
-            
-            # Очистим историю перед новой задачей (чтобы не было "колбас")
-            for agent in roles:
-                data["agents"][agent]["history"] = []
-            
-            for agent in roles:
-                data["agents"][agent]["status"] = "В работе..."
-                # Агент получает ВЕСЬ контекст, но возвращает только СВОЙ вывод
-                result = get_agent_result(agent, current_context)
-                
-                # В историю пишем только то, что сделал конкретный агент
-                data["agents"][agent]["history"].append(f"🔹 {result}")
-                
-                # Обновляем контекст для следующего
-                current_context = result 
-                data["agents"][agent]["status"] = "Свободен"
-            
-            fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
-        
-        bot.reply_to(m, "🤖 Рой завершил анализ. Результаты на панели!")
-
-    bot.polling(none_stop=True)
-            
-            # Запуск логической эстафеты
             current_context = m.text
-            roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
             
+            # Эстафета
             for agent in roles:
-                data["agents"][agent]["status"] = "В работе..."
                 result = get_agent_result(agent, current_context)
                 data["agents"][agent]["history"].append(f"🔹 {result}")
-                current_context = result # Передача результата дальше
-                
-            # Сброс статусов
-            for agent in roles:
+                current_context = result
                 data["agents"][agent]["status"] = "Свободен"
             
             fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
         
-        bot.reply_to(m, "🤖 Рой успешно завершил цикл обработки задачи!")
+        bot.reply_to(m, "🤖 Рой завершил логический цикл. Результаты обновлены!")
 
     bot.polling(none_stop=True)
 
-# Запуск бота в фоне
+# Запуск бота
 if "bot_started" not in st.session_state:
     threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_started = True
@@ -122,22 +79,18 @@ st.markdown("---")
 with open(FILES["agents"], "r", encoding="utf-8") as f:
     data = json.load(f)
 
-# Отображение 5 колонок с агентами
 cols = st.columns(5)
 for i, (name, info) in enumerate(data["agents"].items()):
     with cols[i]:
         st.subheader(name)
-        
-        # Индикация статуса
         if info["status"] == "Свободен":
             st.success("🟢 Свободен")
         else:
             st.warning("⚠️ В работе...")
-            
-        st.write("**История:**")
-        for event in info.get("history", [])[-4:]:
+        
+        st.write("История:")
+        for event in info.get("history", []):
             st.caption(event)
 
-# Автообновление для "живого" дашборда
-time.sleep(2)
+time.sleep(1)
 st.rerun()
