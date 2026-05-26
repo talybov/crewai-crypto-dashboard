@@ -1,59 +1,50 @@
 import streamlit as st
-import telebot, json, os, time, threading
+import json, os, threading, telebot
 
-# --- КОНФИГ ---
-MEMORY_FILE = "bot_memory.json"
+# --- 1. КОНФИГУРАЦИЯ ---
+FILES = {
+    "agents": "bot_memory.json",
+    "tasks": "tasks_log.json"
+}
 
-# --- ЛОГИКА ДАННЫХ ---
-def get_swarm_status():
-    if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r") as f:
-            return json.load(f).get("agents", {})
-    return {}
+# --- 2. ЯДРО СИСТЕМЫ (Работа с памятью) ---
+def init_storage():
+    """Создает файлы, если их нет."""
+    if not os.path.exists(FILES["agents"]):
+        with open(FILES["agents"], "w", encoding="utf-8") as f:
+            json.dump({"agents": {}}, f)
+    if not os.path.exists(FILES["tasks"]):
+        with open(FILES["tasks"], "w", encoding="utf-8") as f:
+            json.dump({"tasks": []}, f)
 
-def update_agent_status(name, status):
-    mem = get_swarm_status()
-    if name in mem:
-        mem[name]["status"] = status
-        with open(MEMORY_FILE, "w") as f:
-            json.dump({"agents": mem}, f)
+def get_data(key):
+    with open(FILES[key], "r", encoding="utf-8") as f:
+        return json.load(f)
 
-# --- САЙТ (Streamlit Дашборд) ---
-st.set_page_config(page_title="AI Swarm Control", layout="wide")
-st.title("🚀 Центр Управления Роем")
+# --- 3. ИНТЕРФЕЙС (Сайт) ---
+st.set_page_config(page_title="Swarm Control", layout="wide")
+init_storage()
 
-col1, col2, col3 = st.columns(3)
-agents = get_swarm_status()
+st.title("🛰 Центр Управления Роем")
 
-# Визуализация агентов на сайте
-for i, (name, info) in enumerate(agents.items()):
-    with [col1, col2, col3][i % 3]:
-        st.metric(label=name, value=info["status"], delta="Активен")
+# Блок мониторинга
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Агенты")
+    st.json(get_data("agents"))
+with col2:
+    st.subheader("Лог задач")
+    st.json(get_data("tasks"))
 
-if st.button("Обновить статус"):
-    st.rerun()
-
-# --- БОТ (Telegram) ---
+# --- 4. БОТ (Telegram) ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
     
-    @bot.message_handler(commands=['status'])
-    def send_status(m):
-        status = get_swarm_status()
-        msg = "\n".join([f"{k}: {v['status']}" for k, v in status.items()])
-        bot.reply_to(m, f"📋 Статус роя:\n{msg}")
-
+    @bot.message_handler(commands=['start'])
+    def start(m):
+        bot.reply_to(m, "Рой готов. Используй /work [имя] для запуска.")
+        
     bot.polling(none_stop=True)
 
-# Запуск бота в фоне
 if "TG_TOKEN" in st.secrets:
     threading.Thread(target=run_bot, daemon=True).start()
-# Добавь это в конец app.py, чтобы видеть файлы прямо на сайте
-st.subheader("📁 Файловое хранилище (Система)")
-files = os.listdir('.') # Показывает все файлы в папке проекта
-st.write("Файлы в директории:", files)
-
-# Просмотр содержимого конкретного файла
-if st.checkbox("Показать содержимое bot_memory.json"):
-    with open("bot_memory.json", "r", encoding="utf-8") as f:
-        st.json(json.load(f))    
