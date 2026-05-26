@@ -11,7 +11,9 @@ def init_data():
     if not os.path.exists(FILES["agents"]):
         data = {"agents": {
             "Аналитик": {"history": ["Готов к работе..."]},
+            "Исследователь": {"history": ["Готов к работе..."]},
             "Риск-менеджер": {"history": ["Готов к работе..."]},
+            "Разработчик": {"history": ["Готов к работе..."]},
             "Менеджер": {"history": ["Готов к работе..."]}
         }}
         with open(FILES["agents"], "w", encoding="utf-8") as f:
@@ -27,21 +29,22 @@ def run_bot():
         with open(FILES["agents"], "r+", encoding="utf-8") as fa:
             data = json.load(fa)
             
-            # Четкое распределение по цепочке
+            # Полный конвейер из 5 ролей
             steps = {
-                "Аналитик": f"🔍 Анализ: {m.text}",
-                "Риск-менеджер": f"🛡 Проверка рисков для: {m.text}",
-                "Менеджер": f"📊 Отчет по: {m.text}"
+                "Исследователь": f"🔍 Поиск инфо: {m.text}",
+                "Аналитик": f"📊 Анализ данных по: {m.text}",
+                "Риск-менеджер": f"🛡 Оценка рисков: {m.text}",
+                "Разработчик": f"💻 Автоматизация процесса: {m.text}",
+                "Менеджер": f"✅ Финализация отчета: {m.text}"
             }
             
             for agent, action in steps.items():
                 if agent in data["agents"]:
-                    # Добавляем в историю (append), а не заменяем
-                    data["agents"][agent].setdefault("history", []).append(f"✅ {action}")
+                    data["agents"][agent].setdefault("history", []).append(f"🔹 {action}")
             
             fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
             
-        bot.reply_to(m, "🤖 Рой начал работу. Данные обновлены на сайте!")
+        bot.reply_to(m, "🤖 Весь рой (5 агентов) взял задачу в работу!")
 
     bot.polling(none_stop=True)
 
@@ -49,15 +52,18 @@ if "bot_started" not in st.session_state:
     threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_started = True
 
+# --- ИНТЕРФЕЙС ---
 st.title("🛰 Центр Управления Роем")
+st.write("Активный состав: 5 специалистов")
+
 with open(FILES["agents"], "r", encoding="utf-8") as f:
     data = json.load(f)
 
+# Отображаем всех пятерых
 for name, info in data.get("agents", {}).items():
     with st.chat_message("assistant"):
         st.write(f"**{name}**")
-        # Показываем все последние действия
-        for event in info.get("history", [])[-5:]:
-            st.caption(f"🔹 {event}")
+        for event in info.get("history", [])[-3:]:
+            st.caption(f"{event}")
 
 time.sleep(1); st.rerun()
