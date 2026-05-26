@@ -15,11 +15,11 @@ def init_data():
     if not os.path.exists(FILES["agents"]):
         data = {
             "agents": {
-                "Исследователь": {"status": "Свободен", "history": ["Готов к работе..."]},
-                "Аналитик": {"status": "Свободен", "history": ["Готов к работе..."]},
-                "Риск-менеджер": {"status": "Свободен", "history": ["Готов к работе..."]},
-                "Разработчик": {"status": "Свободен", "history": ["Готов к работе..."]},
-                "Менеджер": {"status": "Свободен", "history": ["Готов к работе..."]}
+                "Исследователь": {"status": "Свободен", "history": ["Ожидание..."]},
+                "Аналитик": {"status": "Свободен", "history": ["Ожидание..."]},
+                "Риск-менеджер": {"status": "Свободен", "history": ["Ожидание..."]},
+                "Разработчик": {"status": "Свободен", "history": ["Ожидание..."]},
+                "Менеджер": {"status": "Свободен", "history": ["Ожидание..."]}
             }
         }
         with open(FILES["agents"], "w", encoding="utf-8") as f:
@@ -27,14 +27,13 @@ def init_data():
 
 init_data()
 
-# --- ЛОГИКА ЭКСПЕРТИЗЫ ---
+# --- ЛОГИКА ЭКСПЕРТИЗЫ (Цепочка эстафеты) ---
 def get_agent_result(role, previous_data):
-    # Здесь логика, где агент реально "дополняет" предыдущие данные
-    if role == "Исследователь": return f"Сбор данных: '{previous_data}' завершен. Найдены бычьи сигналы."
-    if role == "Аналитик": return f"Тех. анализ: '{previous_data}'. Уровень поддержки найден."
-    if role == "Риск-менеджер": return f"Аудит рисков: '{previous_data}'. Стопы установлены."
-    if role == "Разработчик": return f"Автоматизация: '{previous_data}'. Скрипт готов к деплою."
-    if role == "Менеджер": return f"Итоговое решение: '{previous_data}'. Проект одобрен."
+    if role == "Исследователь": return f"Исследование: '{previous_data}' - найдены бычьи сигналы."
+    if role == "Аналитик": return f"Анализ: '{previous_data}' - поддержка на $140."
+    if role == "Риск-менеджер": return f"Риски: '{previous_data}' - стоп-лосс на $135."
+    if role == "Разработчик": return f"Код: '{previous_data}' - бот настроен."
+    if role == "Менеджер": return f"Итог: '{previous_data}' - Сделка одобрена."
     return previous_data
 
 # --- БОТ ---
@@ -46,20 +45,27 @@ def run_bot():
         with open(FILES["agents"], "r+", encoding="utf-8") as fa:
             data = json.load(fa)
             
-            # Цепочка эстафеты
+            # Запуск логической эстафеты
             current_context = m.text
-            for agent in ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]:
+            roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
+            
+            for agent in roles:
                 data["agents"][agent]["status"] = "В работе..."
                 result = get_agent_result(agent, current_context)
                 data["agents"][agent]["history"].append(f"🔹 {result}")
-                current_context = result
+                current_context = result # Передача результата дальше
+                
+            # Сброс статусов
+            for agent in roles:
                 data["agents"][agent]["status"] = "Свободен"
             
             fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
-        bot.reply_to(m, "🤖 Рой завершил логическую цепочку!")
+        
+        bot.reply_to(m, "🤖 Рой успешно завершил цикл обработки задачи!")
 
     bot.polling(none_stop=True)
 
+# Запуск бота в фоне
 if "bot_started" not in st.session_state:
     threading.Thread(target=run_bot, daemon=True).start()
     st.session_state.bot_started = True
@@ -71,20 +77,22 @@ st.markdown("---")
 with open(FILES["agents"], "r", encoding="utf-8") as f:
     data = json.load(f)
 
-# Отображение 5 колонок
+# Отображение 5 колонок с агентами
 cols = st.columns(5)
 for i, (name, info) in enumerate(data["agents"].items()):
     with cols[i]:
         st.subheader(name)
-        status = info["status"]
-        if status == "Свободен":
-            st.success(status)
+        
+        # Индикация статуса
+        if info["status"] == "Свободен":
+            st.success("🟢 Свободен")
         else:
-            st.warning(status)
+            st.warning("⚠️ В работе...")
             
-        st.write("История:")
+        st.write("**История:**")
         for event in info.get("history", [])[-4:]:
             st.caption(event)
 
-time.sleep(1)
+# Автообновление для "живого" дашборда
+time.sleep(2)
 st.rerun()
