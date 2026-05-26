@@ -38,7 +38,16 @@ with col1:
    # --- ИНТЕРФЕЙС (Живой) ---
 # Создаем контейнер, который будет постоянно обновляться
 placeholder = st.empty()
-
+# --- ИНИЦИАЛИЗАЦИЯ АГЕНТОВ (если они еще не созданы) ---
+if not os.path.exists("bot_memory.json"):
+    initial_data = {
+        "agents": {
+            "Крипто-Аналитик": {"status": "💤 Спит", "task": "Ожидание"},
+            "Авито-Менеджер": {"status": "💤 Спит", "task": "Ожидание"}
+        }
+    }
+    with open("bot_memory.json", "w", encoding="utf-8") as f:
+        json.dump(initial_data, f, ensure_ascii=False)
 while True:
     with placeholder.container():
         col1, col2 = st.columns(2)
