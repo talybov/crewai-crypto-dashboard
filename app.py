@@ -40,11 +40,20 @@ with col1:
 # Создаем контейнер, который будет постоянно обновляться
 placeholder = st.empty()
 # --- ИНИЦИАЛИЗАЦИЯ АГЕНТОВ (если они еще не созданы) ---
-if not os.path.exists("bot_memory.json"):
-    initial_data = {
-        "agents": {
-            "Крипто-Аналитик": {"status": "💤 Спит", "task": "Ожидание"},
-            "Авито-Менеджер": {"status": "💤 Спит", "task": "Ожидание"}
+# --- ИНИЦИАЛИЗАЦИЯ АГЕНТОВ ---
+def setup_initial_agents():
+    if not os.path.exists(FILES["agents"]):
+        data = {
+            "agents": {
+                "Аналитик": {"status": "💤 Спит", "task": "Ожидание"},
+                "Менеджер": {"status": "💤 Спит", "task": "Ожидание"}
+            }
+        }
+        with open(FILES["agents"], "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+# Вызываем функцию сразу при запуске
+setup_initial_agents()
         }
     }
     with open("bot_memory.json", "w", encoding="utf-8") as f:
