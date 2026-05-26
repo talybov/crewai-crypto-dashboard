@@ -45,54 +45,50 @@ placeholder = st.empty()
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
     
-    @bot.message_handler(commands=['start'])
-    def start(m):
-        bot.reply_to(m, "Рой на связи. /add [задача] — добавить, /work [агент] — разбудить.")
-
-    @bot.message_handler(commands=['add'])
-    def add_task(m):
-        task_text = m.text.replace("/add", "").strip()
-        data = get_data("tasks")
-        data["tasks"].append({"task": task_text, "status": "Ожидает"})
-        with open(FILES["tasks"], "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-        bot.reply_to(m, "✅ Задача добавлена!")
-
     @bot.message_handler(commands=['work'])
     def work_agent(m):
-        cmd_parts = m.text.split()
-        if len(cmd_parts) < 2:
-            bot.reply_to(m, "Укажи имя агента: /work Аналитик")
-            return
+        target_name = m.text.replace("/work", "").strip()
+        agents_data = get_data("agents")
+        tasks_data = get_data("tasks")
         
-        target_name = cmd_parts[1].strip()
+        # Поиск агента
+        found_name = next((n for n in agents_data["agents"] if n.lower() == target_name.lower()), None)
+        
+        if found_name and tasks_data["tasks"]:
+            # Забираем первую задачу
+            task = tasks_data["tasks"].pop(0)
+            agents_data["agents"][found_name]["status"] = "🚀 Работает"
+            agents_data["agents"][found_name]["task"] = task["task"]
+            
+            # Сохраняем изменения
+            with open(FILES["agents"], "w", encoding="utf-8") as f:
+                json.dump(agents_data, f, ensure_ascii=False, indent=4)
+            with open(FILES["tasks"], "w", encoding="utf-8") as f:
+                json.dump(tasks_data, f, ensure_ascii=False, indent=4)
+                
+            bot.reply_to(m, f"✅ {found_name} взял задачу: {task['task']}")
+        else:
+            bot.reply_to(m, "❌ Либо такого агента нет, либо задач для выполнения не осталось!")
+
+    @bot.message_handler(commands=['report'])
+    def report_agent(m):
+        # Команда /report Аналитик — выдаст имитацию отчета
+        target_name = m.text.replace("/report", "").strip()
         data = get_data("agents")
         
-        # Поиск с учетом регистра
-        found_name = None
-        for name in data["agents"].keys():
-            if name.lower() == target_name.lower():
-                found_name = name
-                break
-        
-        if found_name:
-            data["agents"][found_name]["status"] = "🚀 Работает"
-            with open(FILES["agents"], "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
-            bot.reply_to(m, f"✅ {found_name} проснулся!")
+        if target_name in data["agents"]:
+            bot.reply_to(m, f"📊 Отчет от {target_name}:\nМонета BTC выросла на 2.5%, ETH на 1.8%. Рынок перегрет, рекомендую фиксацию.")
         else:
-            bot.reply_to(m, f"❌ Агент '{target_name}' не найден. Доступные: {', '.join(data['agents'].keys())}")
+            bot.reply_to(m, "❌ Агент не найден.")
 
     bot.polling(none_stop=True)
 
-# Запуск бота
 if "TG_TOKEN" in st.secrets:
     threading.Thread(target=run_bot, daemon=True).start()
 
 # --- ЦИКЛ ОБНОВЛЕНИЯ ---
 while True:
     with placeholder.container():
-        st.write(f"⏰ Обновлено: {datetime.datetime.now().strftime('%H:%M:%S')}")
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🤖 Агенты")
@@ -100,6 +96,5 @@ while True:
         with col2:
             st.subheader("📝 Лог задач")
             st.json(get_data("tasks"))
-    
     time.sleep(1)
     st.rerun()
