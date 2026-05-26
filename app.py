@@ -3,109 +3,87 @@ import json
 import os
 import telebot
 import time
-import datetime
 import threading
 import random
 
 # --- КОНФИГУРАЦИЯ ---
 FILES = {
-    "agents": os.path.join(os.getcwd(), "bot_memory.json"),
-    "tasks": os.path.join(os.getcwd(), "tasks_log.json")
+    "agents": "bot_memory.json",
+    "tasks": "tasks_log.json"
 }
 
-def init_storage():
+# --- ИНИЦИАЛИЗАЦИЯ ---
+def init_data():
     if not os.path.exists(FILES["tasks"]):
         with open(FILES["tasks"], "w", encoding="utf-8") as f:
             json.dump({"tasks": []}, f)
-            
-def setup_initial_agents():
-    # Создаем структуру, если файла нет
-    data = {
-        "agents": {
-            "Аналитик": {
-                "status": "💤 Спит", "task": "Нет", 
-                "role": "Анализ рынка", "thought_process": "Ожидание"
-            },
-            "Менеджер": {
-                "status": "💤 Спит", "task": "Нет", 
-                "role": "Координатор", "thought_process": "Ожидание"
+    
+    if not os.path.exists(FILES["agents"]):
+        data = {
+            "agents": {
+                "Аналитик": {"status": "💤 Спит", "task": "Нет", "role": "Анализ рынка", "thought_process": "Ожидание"},
+                "Менеджер": {"status": "💤 Спит", "task": "Нет", "role": "Координатор", "thought_process": "Ожидание"}
             }
         }
-    }
-    # Принудительно перезаписываем, если файл старый/битый
-    with open(FILES["agents"], "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+        with open(FILES["agents"], "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
-def get_data(key):
-    with open(FILES[key], "r", encoding="utf-8") as f:
-        return json.load(f)
-
-# Инициализация
-init_storage()
-if not os.path.exists(FILES["agents"]):
-    setup_initial_agents()
-
-# --- ЛОГИКА ---
-def agent_think(role, task):
-    if role == "Анализ рынка":
-        price = random.randint(60000, 70000)
-        return f"1. Сбор данных (BTC: ${price}).\n2. Расчет индикаторов.\n3. Прогноз: {random.choice(['🟢 Рост', '🔴 Падение'])}."
-    return f"1. Оценка задачи: {task}.\n2. Распределение ресурсов.\n3. Мониторинг выполнения."
+init_data()
 
 # --- БОТ ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
-    
+
+    @bot.message_handler(commands=['add'])
+    def add_task(m):
+        task_text = m.text.replace("/add", "").strip()
+        if not task_text: return
+        with open(FILES["tasks"], "r+", encoding="utf-8") as f:
+            data = json.load(f)
+            data["tasks"].append({"task": task_text})
+            f.seek(0)
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        bot.reply_to(m, "✅ Задача в очереди!")
+
     @bot.message_handler(commands=['work'])
     def work_agent(m):
-        cmd = m.text.split()
-        if len(cmd) < 2: 
-            bot.reply_to(m, "Укажи имя: /work [Имя]")
-            return
-        
-        target_name = cmd[1].strip()
-        agents_data = get_data("agents")
-        tasks_data = get_data("tasks")
-        
-        found_name = next((n for n in agents_data["agents"] if n.lower() == target_name.lower()), None)
-        
-        if found_name and tasks_data["tasks"]:
-            task_obj = tasks_data["tasks"].pop(0)
-            plan = agent_think(agents_data["agents"][found_name]["role"], task_obj["task"])
+        target = m.text.replace("/work", "").strip()
+        with open(FILES["tasks"], "r+", encoding="utf-8") as ft, \
+             open(FILES["agents"], "r+", encoding="utf-8") as fa:
             
-            agents_data["agents"][found_name].update({
-                "status": "🚀 Работает",
-                "task": task_obj["task"],
-                "thought_process": plan
-            })
+            tasks = json.load(ft)
+            agents = json.load(fa)
             
-            with open(FILES["agents"], "w", encoding="utf-8") as f:
-                json.dump(agents_data, f, ensure_ascii=False, indent=4)
-            with open(FILES["tasks"], "w", encoding="utf-8") as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=4)
-                
-            bot.reply_to(m, f"✅ {found_name} принял задачу: {task_obj['task']}\n\n🧠 ПЛАН:\n{plan}")
-        else:
-            bot.reply_to(m, "❌ Ошибка: нет задач или агент не найден.")
+            if not tasks["tasks"]:
+                bot.reply_to(m, "❌ Нет задач!")
+                return
+            
+            found = False
+            for name in agents["agents"]:
+                if name.lower() == target.lower():
+                    task = tasks["tasks"].pop(0)
+                    agents["agents"][name]["status"] = "🚀 Работает"
+                    agents["agents"][name]["task"] = task["task"]
+                    agents["agents"][name]["thought_process"] = f"План: 1. Анализ {task['task']}. 2. Прогноз рынка. 3. Отчет."
+                    found = True
+                    bot.reply_to(m, f"✅ {name} взял задачу: {task['task']}\n\n🧠 План:\n{agents['agents'][name]['thought_process']}")
+                    break
+            
+            if found:
+                ft.seek(0); ft.truncate(); json.dump(tasks, ft, ensure_ascii=False, indent=4)
+                fa.seek(0); fa.truncate(); json.dump(agents, fa, ensure_ascii=False, indent=4)
+            else:
+                bot.reply_to(m, "❌ Агент не найден!")
 
     bot.polling(none_stop=True)
 
-# Запуск бота с защитой от дублей
+# Запуск
 if "bot_started" not in st.session_state:
-    if "TG_TOKEN" in st.secrets:
-        threading.Thread(target=run_bot, daemon=True).start()
-        st.session_state.bot_started = True
+    threading.Thread(target=run_bot, daemon=True).start()
+    st.session_state.bot_started = True
 
 # --- ИНТЕРФЕЙС ---
-st.set_page_config(layout="wide")
 st.title("🛰 Центр Управления Роем")
-placeholder = st.empty()
-
-while True:
-    with placeholder.container():
-        st.subheader("🤖 Агенты")
-        st.json(get_data("agents"))
-        st.subheader("📝 Очередь")
-        st.json(get_data("tasks"))
-    time.sleep(2)
-    st.rerun()
+with open(FILES["agents"], "r", encoding="utf-8") as f: st.json(json.load(f))
+with open(FILES["tasks"], "r", encoding="utf-8") as f: st.json(json.load(f))
+time.sleep(1); st.rerun()
