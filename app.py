@@ -40,9 +40,31 @@ with col2:
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
     
+    # 1. Приветствие
     @bot.message_handler(commands=['start'])
     def start(m):
-        bot.reply_to(m, "Рой готов. Используй /work [имя] для запуска.")
+        bot.reply_to(m, "Рой готов к работе! Используй /add [задача] для добавления.")
+
+    # 2. Добавление задачи
+    @bot.message_handler(commands=['add'])
+    def add_task(m):
+        task_text = m.text.replace("/add", "").strip()
+        if not task_text:
+            bot.reply_to(m, "Укажи задачу после команды /add")
+            return
+        
+        # Читаем файл
+        with open(FILES["tasks"], "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # Добавляем задачу
+        data["tasks"].append({"task": task_text, "status": "Ожидает"})
+        
+        # Сохраняем
+        with open(FILES["tasks"], "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            
+        bot.reply_to(m, f"✅ Задача '{task_text}' добавлена в список!")
         
     bot.polling(none_stop=True)
 
