@@ -31,7 +31,26 @@ st.title("🛰 Центр Управления Роем")
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("Агенты")
-    st.json(get_data("agents"))
+   # --- ИНТЕРФЕЙС (Живой) ---
+# Создаем контейнер, который будет постоянно обновляться
+placeholder = st.empty()
+
+while True:
+    with placeholder.container():
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("🤖 Агенты")
+            st.json(get_data("agents"))
+            
+        with col2:
+            st.subheader("📝 Лог задач")
+            st.json(get_data("tasks"))
+    
+    # Пауза 3 секунды перед обновлением данных
+    time.sleep(3)
+    # Перезапуск скрипта для считывания свежих данных из файлов
+    st.rerun()
 with col2:
     st.subheader("Лог задач")
     st.json(get_data("tasks"))
