@@ -49,6 +49,25 @@ def run_bot():
             current_context = m.text
             roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
             
+            # Очистим историю перед новой задачей
+            for agent in roles:
+                data["agents"][agent]["history"] = []
+            
+            for agent in roles:
+                data["agents"][agent]["status"] = "В работе..."
+                result = get_agent_result(agent, current_context)
+                
+                # В историю пишем только то, что сделал конкретный агент
+                data["agents"][agent]["history"].append(f"🔹 {result}")
+                
+                # Обновляем контекст для следующего
+                current_context = result 
+                data["agents"][agent]["status"] = "Свободен"
+            
+            fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
+        
+        bot.reply_to(m, "🤖 Рой завершил анализ. Результаты на панели!")
+            
             # Очистим историю перед новой задачей (чтобы не было "колбас")
             for agent in roles:
                 data["agents"][agent]["history"] = []
