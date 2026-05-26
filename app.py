@@ -1,6 +1,10 @@
 import streamlit as st
 import json, os, threading, telebot
-
+import json
+import os
+import threading
+import telebot
+import time  # <--- ВОТ ЭТОГО СЛОВА НЕ ХВАТАЕТ
 # --- 1. КОНФИГУРАЦИЯ ---
 FILES = {
     "agents": "bot_memory.json",
