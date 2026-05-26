@@ -1,79 +1,51 @@
-import os, time, requests, json, threading, streamlit as st, telebot
-from telebot import TeleBot
+import streamlit as st
+import telebot, json, os, time, threading
 
-# --- ВИЗУАЛЬНЫЕ КОНСТАНТЫ (ASCII-анимация) ---
-ICONS = {
-    "idle": "💤",   # Спит
-    "think": "🌀",  # Думает
-    "done": "✅",   # Готово
-    "error": "❌",  # Ошибка
-    "core": "🧠"    # Главный ИИ
-}
+# --- КОНФИГ ---
+MEMORY_FILE = "bot_memory.json"
 
-# --- КЛАСС АГЕНТА (С симуляцией визуализации) ---
-class VisualAgent:
-    def __init__(self, name, task_desc):
-        self.name = name
-        self.task_desc = task_desc
-        self.status = "idle"  # Начинаем в статусе "Спит"
+# --- ЛОГИКА ДАННЫХ ---
+def get_swarm_status():
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, "r") as f:
+            return json.load(f).get("agents", {})
+    return {}
 
-    def get_status_line(self):
-        """Возвращает строку состояния для Дашборда."""
-        icon = ICONS.get(self.status, "❓")
-        return f"{icon} **{self.name}**: {self.task_desc}"
+def update_agent_status(name, status):
+    mem = get_swarm_status()
+    if name in mem:
+        mem[name]["status"] = status
+        with open(MEMORY_FILE, "w") as f:
+            json.dump({"agents": mem}, f)
 
-# --- ИНИЦИАЛИЗАЦИЯ РОЯ (Симуляция) ---
-swarm_agents = [
-    VisualAgent("Крипто-Аналитик", "Мониторинг BTC/ETH"),
-    VisualAgent("Авито-Менеджер", "Генерация описаний"),
-    VisualAgent("Метеоролог", "Прогноз wttr.in")
-]
+# --- САЙТ (Streamlit Дашборд) ---
+st.set_page_config(page_title="AI Swarm Control", layout="wide")
+st.title("🚀 Центр Управления Роем")
 
-# --- БОТ-ОРКЕСТРАТОР ---
-@st.cache_resource
-def start_bot():
-    bot = TeleBot(st.secrets["TG_TOKEN"])
+col1, col2, col3 = st.columns(3)
+agents = get_swarm_status()
+
+# Визуализация агентов на сайте
+for i, (name, info) in enumerate(agents.items()):
+    with [col1, col2, col3][i % 3]:
+        st.metric(label=name, value=info["status"], delta="Активен")
+
+if st.button("Обновить статус"):
+    st.rerun()
+
+# --- БОТ (Telegram) ---
+def run_bot():
+    bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
     
-    def get_swarm_dashboard():
-        """Генерирует текст полного Дашборда."""
-        dashboard = f"{ICONS['core']} **ЦЕНТР УПРАВЛЕНИЯ РОЕМ V1.0**\n"
-        dashboard += "─" * 20 + "\n"
-        for agent in swarm_agents:
-            dashboard += agent.get_status_line() + "\n"
-        dashboard += "─" * 20 + "\n"
-        dashboard += f"⏳ *Последнее обновление:* {time.strftime('%H:%M:%S')}"
-        return dashboard
+    @bot.message_handler(commands=['status'])
+    def send_status(m):
+        status = get_swarm_status()
+        msg = "\n".join([f"{k}: {v['status']}" for k, v in status.items()])
+        bot.reply_to(m, f"📋 Статус роя:\n{msg}")
 
-    @bot.message_handler(commands=['swarm_demo'])
-    def swarm_demo(m):
-        if str(m.chat.id) != str(st.secrets["TG_CHAT_ID"]): return
-        
-        # 1. Отправляем начальный Дашборд
-        dash_msg = bot.send_message(m.chat.id, get_swarm_dashboard(), parse_mode="Markdown")
-        
-        # 2. Симуляция деятельности (анимация через редактирование)
-        time.sleep(2)
-        
-        # --- Агент 1 начинает работу ---
-        swarm_agents[0].status = "think"
-        bot.edit_message_text(chat_id=m.chat.id, message_id=dash_msg.message_id, text=get_swarm_dashboard(), parse_mode="Markdown")
-        time.sleep(3) # Симуляция долгого запроса
-        
-        swarm_agents[0].status = "done"
-        bot.edit_message_text(chat_id=m.chat.id, message_id=dash_msg.message_id, text=get_swarm_dashboard(), parse_mode="Markdown")
-        time.sleep(2)
-        
-        # --- Агент 2 начинает работу ---
-        swarm_agents[1].status = "think"
-        bot.edit_message_text(chat_id=m.chat.id, message_id=dash_msg.message_id, text=get_swarm_dashboard(), parse_mode="Markdown")
-        time.sleep(4)
-        
-        swarm_agents[1].status = "done"
-        bot.edit_message_text(chat_id=m.chat.id, message_id=dash_msg.message_id, text=get_swarm_dashboard(), parse_mode="Markdown")
+    bot.polling(none_stop=True)
 
-    threading.Thread(target=lambda: bot.infinity_polling(), daemon=True).start()
-    return bot
-
+# Запуск бота в фоне
 if "TG_TOKEN" in st.secrets:
-    start_bot()
-    st.write("### Визуальный движок роя запущен.")
+    threading.Thread(target=run_bot, daemon=True).start()
+    
