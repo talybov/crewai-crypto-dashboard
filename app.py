@@ -33,7 +33,6 @@ def get_data(key):
     with open(FILES[key], "r", encoding="utf-8") as f:
         return json.load(f)
 
-# Запуск инициализации
 init_storage()
 setup_initial_agents()
 
@@ -66,24 +65,31 @@ def run_bot():
             bot.reply_to(m, "Укажи имя агента: /work Аналитик")
             return
         
-        agent_name = cmd_parts[1]
+        target_name = cmd_parts[1].strip()
         data = get_data("agents")
         
-        if agent_name in data["agents"]:
-            data["agents"][agent_name]["status"] = "🚀 Работает"
+        # Поиск с учетом регистра
+        found_name = None
+        for name in data["agents"].keys():
+            if name.lower() == target_name.lower():
+                found_name = name
+                break
+        
+        if found_name:
+            data["agents"][found_name]["status"] = "🚀 Работает"
             with open(FILES["agents"], "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
-            bot.reply_to(m, f"✅ {agent_name} проснулся и приступил к работе!")
+            bot.reply_to(m, f"✅ {found_name} проснулся!")
         else:
-            bot.reply_to(m, "❌ Такого агента нет в списке.")
+            bot.reply_to(m, f"❌ Агент '{target_name}' не найден. Доступные: {', '.join(data['agents'].keys())}")
 
     bot.polling(none_stop=True)
 
-# Запуск бота в фоне
+# Запуск бота
 if "TG_TOKEN" in st.secrets:
     threading.Thread(target=run_bot, daemon=True).start()
 
-# --- ЦИКЛ ОБНОВЛЕНИЯ (ЖИВОЙ САЙТ) ---
+# --- ЦИКЛ ОБНОВЛЕНИЯ ---
 while True:
     with placeholder.container():
         st.write(f"⏰ Обновлено: {datetime.datetime.now().strftime('%H:%M:%S')}")
