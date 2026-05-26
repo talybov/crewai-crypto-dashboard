@@ -14,9 +14,23 @@ FILES = {
 
 # --- ИНИЦИАЛИЗАЦИЯ ---
 def init_data():
-    if not os.path.exists(FILES["tasks"]):
-        with open(FILES["tasks"], "w", encoding="utf-8") as f:
-            json.dump({"tasks": []}, f)
+    # Принудительно удаляем старые файлы, чтобы создать новые
+    for f_name in [FILES["tasks"], FILES["agents"]]:
+        if os.path.exists(f_name):
+            os.remove(f_name)
+    
+    # Теперь создаем свежие
+    with open(FILES["tasks"], "w", encoding="utf-8") as f:
+        json.dump({"tasks": []}, f)
+    
+    data = {
+        "agents": {
+            "Аналитик": {"status": "💤 Спит", "task": "Нет", "role": "Анализ рынка", "thought_process": "Ожидание"},
+            "Менеджер": {"status": "💤 Спит", "task": "Нет", "role": "Координатор", "thought_process": "Ожидание"}
+        }
+    }
+    with open(FILES["agents"], "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
     
     if not os.path.exists(FILES["agents"]):
         data = {
