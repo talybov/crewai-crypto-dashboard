@@ -48,4 +48,12 @@ def run_bot():
 # Запуск бота в фоне
 if "TG_TOKEN" in st.secrets:
     threading.Thread(target=run_bot, daemon=True).start()
-    
+# Добавь это в конец app.py, чтобы видеть файлы прямо на сайте
+st.subheader("📁 Файловое хранилище (Система)")
+files = os.listdir('.') # Показывает все файлы в папке проекта
+st.write("Файлы в директории:", files)
+
+# Просмотр содержимого конкретного файла
+if st.checkbox("Показать содержимое bot_memory.json"):
+    with open("bot_memory.json", "r", encoding="utf-8") as f:
+        st.json(json.load(f))    
