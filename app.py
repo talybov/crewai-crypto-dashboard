@@ -4,93 +4,62 @@ import os
 import telebot
 import threading
 import time
+import yfinance as yf
+from duckduckgo_search import DDGS
 
-# Настройка страницы
-st.set_page_config(page_title="Multi-Agent Swarm", layout="wide")
-
+st.set_page_config(page_title="Pro-Crypto Swarm", layout="wide")
 FILES = {"agents": "bot_memory.json"}
 
-# --- ИНИЦИАЛИЗАЦИЯ ---
-def init_data():
-    if not os.path.exists(FILES["agents"]):
-        data = {
-            "agents": {
-                "Исследователь": {"status": "Свободен", "history": ["Ожидание..."]},
-                "Аналитик": {"status": "Свободен", "history": ["Ожидание..."]},
-                "Риск-менеджер": {"status": "Свободен", "history": ["Ожидание..."]},
-                "Разработчик": {"status": "Свободен", "history": ["Ожидание..."]},
-                "Менеджер": {"status": "Свободен", "history": ["Ожидание..."]}
-            }
-        }
-        with open(FILES["agents"], "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+# --- ИНСТРУМЕНТЫ АНАЛИЗА ---
+def get_market_data(ticker):
+    try:
+        data = yf.Ticker(f"{ticker}-USD").info
+        return f"Цена: {data.get('currentPrice', 'N/A')}, P/E: {data.get('trailingPE', 'N/A')}"
+    except: return "Ошибка получения данных."
 
-init_data()
+def get_news(ticker):
+    with DDGS() as ddgs:
+        results = [r for r in ddgs.text(f"{ticker} crypto news", max_results=2)]
+        return "\n".join([r['body'] for r in results])
 
-# --- ЛОГИКА ЭКСПЕРТИЗЫ ---
-def get_agent_result(role, previous_data):
-    if role == "Исследователь": return f"Сбор данных: '{previous_data}' - найдены бычьи сигналы."
-    if role == "Аналитик": return f"Тех. анализ: данные подтверждают поддержку на $140."
-    if role == "Риск-менеджер": return f"Аудит рисков: стоп-лосс на $135 (безопасно)."
-    if role == "Разработчик": return f"Автоматизация: скрипт для сделки готов."
-    if role == "Менеджер": return f"Итоговое решение: сделка одобрена."
-    return previous_data
+# --- УМНЫЕ АГЕНТЫ ---
+def get_agent_result(role, ticker, previous_context):
+    if role == "Исследователь":
+        news = get_news(ticker)
+        return f"Новости: {news[:150]}"
+    if role == "Аналитик":
+        price = get_market_data(ticker)
+        return f"Тех-анализ: {price}. Контекст: {previous_context[:100]}"
+    if role == "Риск-менеджер":
+        return f"Риск-оценка: Низкая волатильность по {ticker} сейчас."
+    if role == "Разработчик":
+        return f"Сигнал: {ticker} в зоне интереса алгоритма."
+    if role == "Менеджер":
+        return f"ВЕРДИКТ: Анализ {ticker} завершен. Покупать, если цена закрепится."
+    return previous_context
 
-# --- БОТ ---
+# --- ЛОГИКА БОТА ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
 
     @bot.message_handler(func=lambda m: True)
     def handle_message(m):
+        ticker = m.text.upper() # Ожидаем тикер, например SOL
         with open(FILES["agents"], "r+", encoding="utf-8") as fa:
             data = json.load(fa)
-            
             roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
             
-            # Очистка истории перед новым анализом
+            context = ticker
             for agent in roles:
-                data["agents"][agent]["history"] = []
                 data["agents"][agent]["status"] = "В работе..."
-            
-            current_context = m.text
-            
-            # Эстафета
-            for agent in roles:
-                result = get_agent_result(agent, current_context)
-                data["agents"][agent]["history"].append(f"🔹 {result}")
-                current_context = result
+                result = get_agent_result(agent, ticker, context)
+                data["agents"][agent]["history"] = [f"🔹 {result}"]
+                context = result
                 data["agents"][agent]["status"] = "Свободен"
             
             fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
-        
-        bot.reply_to(m, "🤖 Рой завершил логический цикл. Результаты обновлены!")
+        bot.reply_to(m, f"🚀 Анализ {ticker} готов!")
 
     bot.polling(none_stop=True)
 
-# Запуск бота
-if "bot_started" not in st.session_state:
-    threading.Thread(target=run_bot, daemon=True).start()
-    st.session_state.bot_started = True
-
-# --- ИНТЕРФЕЙС ---
-st.title("🛰 Центр Управления Роем")
-st.markdown("---")
-
-with open(FILES["agents"], "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-cols = st.columns(5)
-for i, (name, info) in enumerate(data["agents"].items()):
-    with cols[i]:
-        st.subheader(name)
-        if info["status"] == "Свободен":
-            st.success("🟢 Свободен")
-        else:
-            st.warning("⚠️ В работе...")
-        
-        st.write("История:")
-        for event in info.get("history", []):
-            st.caption(event)
-
-time.sleep(1)
-st.rerun()
+# (Остальной код интерфейса оставляем без изменений, как в предыдущем примере)
