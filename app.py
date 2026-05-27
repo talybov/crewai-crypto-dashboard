@@ -60,6 +60,21 @@ if "bot_started" not in st.session_state:
 st.title("🛰 Автономный Рой: Аналитика в реальном времени")
 data = get_market_analysis(TICKER)
 
+if data:
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Цена BTC", f"${data['price']:.2f}")
+    col2.metric("RSI (14)", f"{data['rsi']:.2f}")
+    col3.metric("Рекомендация", data['signal'])
+
+    if data['signal'] == "BUY": st.success("Сигнал на ПОКУПКУ!")
+    elif data['signal'] == "SELL": st.error("Сигнал на ПРОДАЖУ!")
+    else: st.info("Рынок нейтрален. Ждем.")
+else:
+    st.warning("Данные с рынка пока не поступили. Повторная попытка через 60 сек...")
+
+time.sleep(60)
+st.rerun()
+
 col1, col2, col3 = st.columns(3)
 col1.metric("Цена BTC", f"${data['price']:.2f}")
 col2.metric("RSI (14)", f"{data['rsi']:.2f}")
