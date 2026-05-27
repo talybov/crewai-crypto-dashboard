@@ -43,13 +43,30 @@ def get_news(ticker):
     except: return "Ошибка поиска"
 
 # --- ЛОГИКА АГЕНТОВ ---
-def get_agent_result(role, ticker, previous_data):
-    if role == "Исследователь": return f"Новости: {get_news(ticker)}"
-    if role == "Аналитик": return f"Тех-анализ: {get_market_data(ticker)}. {previous_data}"
-    if role == "Риск-менеджер": return f"Оценка: {ticker} волатилен. {previous_data}"
-    if role == "Разработчик": return f"Код: Стратегия для {ticker} оптимизирована."
-    if role == "Менеджер": return f"ВЕРДИКТ: Позиция по {ticker} одобрена."
-    return previous_data
+def def get_agent_result(role, ticker, ticker_data, news_data):
+    # Логика: Аналитик передает данные, а Риск-менеджер их фильтрует
+    if role == "Исследователь":
+        return f"Новости: {news_data[:100]}"
+    
+    if role == "Аналитик":
+        return f"Рынок: {ticker_data}. Тренд: {'Рост' if 'цена' in ticker_data else 'Флэт'}"
+    
+    if role == "Риск-менеджер":
+        # Если в новостях есть негатив, риск-менеджер блокирует сделку
+        if "bad" in news_data.lower() or "crash" in news_data.lower():
+            return "⚠️ РИСК: Высокий! Рекомендую выход из позиции."
+        return "✅ РИСК: Приемлемый. Волатильность в норме."
+    
+    if role == "Разработчик":
+        return "🔧 Скрипт: Мониторинг запущен, лимиты обновлены."
+        
+    if role == "Менеджер":
+        # Логика принятия решения: Менеджер суммирует данные
+        if "РИСК" in ticker_data: # Условная проверка
+            return "❌ ВЕРДИКТ: Сделка ОТКЛОНЕНА из-за высокой волатильности."
+        return "🚀 ВЕРДИКТ: Сделка ОДОБРЕНА. Вход по рынку."
+    
+    return "Ожидание..."
 
 # --- БОТ ---
 def run_bot():
