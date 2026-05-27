@@ -1,65 +1,47 @@
 import streamlit as st
 import json
 import os
-import telebot
-import threading
 import time
-import yfinance as yf
-from duckduckgo_search import DDGS
 
-st.set_page_config(page_title="Pro-Crypto Swarm", layout="wide")
-FILES = {"agents": "bot_memory.json"}
+# --- НАСТРОЙКИ ---
+st.set_page_config(page_title="Swarm Dashboard", layout="wide")
+DATA_FILE = "bot_memory.json"
 
-# --- ИНСТРУМЕНТЫ АНАЛИЗА ---
-def get_market_data(ticker):
-    try:
-        data = yf.Ticker(f"{ticker}-USD").info
-        return f"Цена: {data.get('currentPrice', 'N/A')}, P/E: {data.get('trailingPE', 'N/A')}"
-    except: return "Ошибка получения данных."
+# --- ИНИЦИАЛИЗАЦИЯ ---
+def init_data():
+    if not os.path.exists(DATA_FILE):
+        data = {
+            "agents": {
+                "Исследователь": {"status": "Свободен", "history": ["Старт системы..."]},
+                "Аналитик": {"status": "Свободен", "history": ["Старт системы..."]},
+                "Риск-менеджер": {"status": "Свободен", "history": ["Старт системы..."]},
+                "Разработчик": {"status": "Свободен", "history": ["Старт системы..."]},
+                "Менеджер": {"status": "Свободен", "history": ["Старт системы..."]}
+            }
+        }
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
 
-def get_news(ticker):
-    with DDGS() as ddgs:
-        results = [r for r in ddgs.text(f"{ticker} crypto news", max_results=2)]
-        return "\n".join([r['body'] for r in results])
+init_data()
 
-# --- УМНЫЕ АГЕНТЫ ---
-def get_agent_result(role, ticker, previous_context):
-    if role == "Исследователь":
-        news = get_news(ticker)
-        return f"Новости: {news[:150]}"
-    if role == "Аналитик":
-        price = get_market_data(ticker)
-        return f"Тех-анализ: {price}. Контекст: {previous_context[:100]}"
-    if role == "Риск-менеджер":
-        return f"Риск-оценка: Низкая волатильность по {ticker} сейчас."
-    if role == "Разработчик":
-        return f"Сигнал: {ticker} в зоне интереса алгоритма."
-    if role == "Менеджер":
-        return f"ВЕРДИКТ: Анализ {ticker} завершен. Покупать, если цена закрепится."
-    return previous_context
+# --- ИНТЕРФЕЙС ---
+st.title("🛰 Центр Управления Роем")
 
-# --- ЛОГИКА БОТА ---
-def run_bot():
-    bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
+try:
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    cols = st.columns(5)
+    for i, (name, info) in enumerate(data["agents"].items()):
+        with cols[i]:
+            st.subheader(name)
+            st.success(info["status"])
+            st.write("История:")
+            for event in info.get("history", []):
+                st.caption(event)
+except Exception as e:
+    st.error(f"Ошибка загрузки данных: {e}")
 
-    @bot.message_handler(func=lambda m: True)
-    def handle_message(m):
-        ticker = m.text.upper() # Ожидаем тикер, например SOL
-        with open(FILES["agents"], "r+", encoding="utf-8") as fa:
-            data = json.load(fa)
-            roles = ["Исследователь", "Аналитик", "Риск-менеджер", "Разработчик", "Менеджер"]
-            
-            context = ticker
-            for agent in roles:
-                data["agents"][agent]["status"] = "В работе..."
-                result = get_agent_result(agent, ticker, context)
-                data["agents"][agent]["history"] = [f"🔹 {result}"]
-                context = result
-                data["agents"][agent]["status"] = "Свободен"
-            
-            fa.seek(0); fa.truncate(); json.dump(data, fa, ensure_ascii=False, indent=4)
-        bot.reply_to(m, f"🚀 Анализ {ticker} готов!")
-
-    bot.polling(none_stop=True)
-
-# (Остальной код интерфейса оставляем без изменений, как в предыдущем примере)
+# Чтобы не было бесконечного цикла, если что-то не так
+if st.button("Обновить статус"):
+    st.rerun()
