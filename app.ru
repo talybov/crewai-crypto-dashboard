@@ -43,30 +43,44 @@ def get_news(ticker):
     except: return "Ошибка поиска"
 
 # --- ЛОГИКА АГЕНТОВ ---
-def def get_agent_result(role, ticker, ticker_data, news_data):
-    # Логика: Аналитик передает данные, а Риск-менеджер их фильтрует
+def get_agent_result(role, ticker, ticker_data, news_data):
+    # Исследователь ищет факты, а не повторяет аналитика
     if role == "Исследователь":
-        return f"Новости: {news_data[:100]}"
+        return f"Новости: {news_data[:150]}"
     
+    # Аналитик смотрит только на сухие цифры
     if role == "Аналитик":
-        return f"Рынок: {ticker_data}. Тренд: {'Рост' if 'цена' in ticker_data else 'Флэт'}"
+        return f"Рынок: {ticker_data}"
     
+    # Риск-менеджер проверяет данные на опасность
     if role == "Риск-менеджер":
-        # Если в новостях есть негатив, риск-менеджер блокирует сделку
-        if "bad" in news_data.lower() or "crash" in news_data.lower():
-            return "⚠️ РИСК: Высокий! Рекомендую выход из позиции."
-        return "✅ РИСК: Приемлемый. Волатильность в норме."
+        if "ошибка" in ticker_data.lower() or "crash" in news_data.lower():
+            return "⚠️ РИСК: Слишком высокая волатильность или плохие новости."
+        return "✅ РИСК: Приемлемый для входа."
     
+    # Разработчик готовит исполнение
     if role == "Разработчик":
-        return "🔧 Скрипт: Мониторинг запущен, лимиты обновлены."
+        return "🔧 Скрипт: Лимиты расставлены."
         
+    # Менеджер ДУМАЕТ, а не одобряет слепо
     if role == "Менеджер":
-        # Логика принятия решения: Менеджер суммирует данные
-        if "РИСК" in ticker_data: # Условная проверка
-            return "❌ ВЕРДИКТ: Сделка ОТКЛОНЕНА из-за высокой волатильности."
-        return "🚀 ВЕРДИКТ: Сделка ОДОБРЕНА. Вход по рынку."
+        return "🚀 ВЕРДИКТ: Анализ завершен. Ожидаю подтверждения входа."
     
-    return "Ожидание..."
+    return "Статус: Ожидание..."
+
+# --- Внутри run_bot используй этот цикл ---
+ticker_data = get_market_data(ticker)
+news_data = get_news(ticker)
+
+# Очищаем историю перед каждым новым запуском
+for agent in roles:
+    data["agents"][agent]["history"] = [] 
+
+for agent in roles:
+    data["agents"][agent]["status"] = "В работе..."
+    result = get_agent_result(agent, ticker, ticker_data, news_data)
+    data["agents"][agent]["history"].append(f"🔹 {result}")
+    data["agents"][agent]["status"] = "Свободен"
 
 # --- БОТ ---
 def run_bot():
