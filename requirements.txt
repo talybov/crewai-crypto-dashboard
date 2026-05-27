@@ -3,3 +3,5 @@ streamlit
 requests
 SpeechRecognition
 pydub
+yfinance
+duckduckgo-search
