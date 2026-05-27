@@ -12,18 +12,26 @@ st.set_page_config(page_title="Autonomous Swarm", layout="wide")
 TICKER = "BTC"
 
 def get_market_analysis(ticker):
-    df = yf.download(f"{ticker}-USD", period="1d", interval="15m", progress=False)
+    # Добавляем auto_adjust=True, чтобы очистить данные от лишних уровней
+    df = yf.download(f"{ticker}-USD", period="1d", interval="15m", progress=False, auto_adjust=True)
+    
     if df.empty: return None
     
-    rsi = ta.momentum.rsi(df['Close'], window=14).iloc[-1]
-    price = df['Close'].iloc[-1]
+    # Принудительно выбираем колонку 'Close' и превращаем её в Series
+    # Если df['Close'] - это DataFrame (из-за мультииндекса), берем первую колонку
+    close_data = df['Close']
+    if isinstance(close_data, pd.DataFrame):
+        close_data = close_data.iloc[:, 0]
+        
+    # Теперь точно передаем 1D Series
+    rsi = ta.momentum.rsi(close_data, window=14).iloc[-1]
+    price = close_data.iloc[-1]
     
     signal = "HOLD"
     if rsi < 30: signal = "BUY"
     elif rsi > 70: signal = "SELL"
     
     return {"price": float(price), "rsi": float(rsi), "signal": signal, "time": datetime.now().strftime("%H:%M")}
-
 # --- ТЕЛЕГРАМ-БОТ (ДРУГ) ---
 def run_bot():
     bot = telebot.TeleBot(st.secrets["TG_TOKEN"])
