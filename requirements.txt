@@ -5,3 +5,4 @@ SpeechRecognition
 pydub
 yfinance
 duckduckgo-search
+pandas
