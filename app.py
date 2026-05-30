@@ -8,7 +8,35 @@ import time
 from datetime import datetime
 import json
 import os
+import streamlit as st
+from agent_state import get_all_states
 
+# ... ваш существующий код для графиков и Bybit ...
+
+def show_agent_office():
+    st.sidebar.subheader("🏢 Офис ИИ-агентов")
+    states = get_all_states()
+    
+    if not states:
+        st.sidebar.info("Агенты еще не начали работу...")
+    else:
+        for agent, info in states.items():
+            status_color = "🟢" if info['status'] == "Активен" else "⚪"
+            st.sidebar.markdown(f"**{status_color} {agent}**")
+            st.sidebar.caption(f"Задача: {info['task']}")
+            st.sidebar.divider()
+
+# Основная логика дашборда
+def main():
+    st.title("Crypto Trading AI Dashboard")
+    
+    # Вызываем наш новый блок
+    show_agent_office()
+    
+    # ... ваш существующий функционал (графики, кнопки) остается здесь ...
+
+if __name__ == "__main__":
+    main()
 STATE_FILE = "agent_states.json"
 
 def update_agent_status(agent_name, status, task):
