@@ -6,6 +6,31 @@ import telebot
 import threading
 import time
 from datetime import datetime
+import json
+import os
+
+STATE_FILE = "agent_states.json"
+
+def update_agent_status(agent_name, status, task):
+    # Загружаем текущие статусы
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            data = json.load(f)
+    else:
+        data = {}
+    
+    # Обновляем статус
+    data[agent_name] = {"status": status, "task": task}
+    
+    # Сохраняем
+    with open(STATE_FILE, "w") as f:
+        json.dump(data, f)
+
+def get_all_states():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
 # --- КОНФИГ ---
 st.set_config = st.set_page_config(page_title="Autonomous Swarm", layout="wide")
