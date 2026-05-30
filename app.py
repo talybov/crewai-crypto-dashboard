@@ -13,7 +13,35 @@ from agent_state import get_all_states
 def draw_office_layout():
     st.subheader("🏢 Операционный штаб ИИ-агентов")
     states = get_all_states()
-    
+    import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+
+st.set_page_config(layout="wide", page_title="AI Trading Terminal")
+
+# Заголовок
+st.title("🤖 AI Trading Agent Dashboard")
+
+# Боковая панель для управления
+with st.sidebar:
+    st.header("Настройки")
+    api_key = st.text_input("API Key", type="password")
+    mode = st.selectbox("Режим", ["Demo", "Live"])
+    start_btn = st.button("Запустить агентов")
+
+# Основная область
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    st.subheader("Рыночный график")
+    # Здесь будет график Plotly
+    fig = go.Figure(data=[go.Candlestick(x=['2026-05-30'], open=[100], high=[105], low=[95], close=[102])])
+    st.plotly_chart(fig, use_container_width=True)
+
+with col2:
+    st.subheader("Лог ИИ-агентов")
+    st.info("Агент Аналитик: Анализ завершен.")
+    st.success("Агент Стратег: Сигнал на BUY.")
     # Создаем сетку из колонок, имитирующую столы
     cols = st.columns(3)
     
