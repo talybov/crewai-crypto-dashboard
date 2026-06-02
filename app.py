@@ -89,7 +89,7 @@ with col1:
     # График Plotly (Пока генерируем синтетическую историю, для реальной нужен CLOB API)
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=pd.date_range(end=datetime.now(), periods=24, freq='H'),
+        x=pd.date_range(end=datetime.now(), periods=24, freq='h'),
         y=[yes_price + i*0.2 - 2 for i in range(24)], 
         mode='lines+markers',
         name='Вероятность YES (%)',
