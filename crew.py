@@ -1,184 +1,114 @@
 import os
 from crewai import Agent, Task, Crew, Process
-from langchain.tools import DuckDuckGoSearchRun
-from langchain_openai import ChatOpenAI
+from langchain_community.tools import DuckDuckGoSearchRun
 
-# Инициализируем инструменты поиска
+# Инструмент поиска
 search_tool = DuckDuckGoSearchRun()
 
-# Используем GPT-4o-mini (дешевле и быстрее для таких задач)
-# Если хочешь другую модель, замени здесь
-llm = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0.3,
-    api_key=os.getenv("OPENAI_API_KEY")  # Обязательно добавь в Secrets Streamlit!
-)
-
 def create_polymarket_crew(market_question, market_description, resolution_source):
-    """
-    Создает рой агентов для анализа конкретного рынка Polymarket
-    """
+    """Создает рой агентов для анализа рынка Polymarket"""
     
-    # === АГЕНТ 1: Market Scanner ===
+    # === АГЕНТ 1: Сканирует рынок ===
     scanner = Agent(
         role="Market Scanner",
         goal="Анализировать текущие котировки и ликвидность рынка",
-        backstory="""Ты эксперт по рынкам предсказаний. Твоя задача - оценить, 
-        насколько текущая цена отражает реальную вероятность события. 
-        Ищешь неэффективности и аномалии в объемах торгов.""",
-        tools=[],
-        llm=llm,
+        backstory="""Ты эксперт по рынкам предсказаний. Оцениваешь, 
+        насколько текущая цена отражает реальную вероятность события.""",
         verbose=True,
-        allow_delegation=False
+        allow_delegation=False,
+        llm="gpt-4o-mini"  # В 0.11.2 llm передается как СТРОКА
     )
     
-    # === АГЕНТ 2: News Analyst ===
+    # === АГЕНТ 2: Анализирует новости ===
     news_analyst = Agent(
-        role="News & Sentiment Analyst",
-        goal="Найти свежие новости и оценить их влияние на вероятность события",
-        backstory="""Ты опытный аналитик новостей. Используя поиск в интернете, 
-        ты находишь самые свежие и релевантные новости по теме рынка. 
-        Оцениваешь, как они влияют на вероятность события.""",
+        role="News Analyst",
+        goal="Найти свежие новости и оценить их влияние",
+        backstory="""Ты аналитик новостей. Ищешь свежие новости 
+        по теме рынка и оцениваешь их влияние.""",
         tools=[search_tool],
-        llm=llm,
         verbose=True,
-        allow_delegation=False
+        allow_delegation=False,
+        llm="gpt-4o-mini"
     )
     
-    # === АГЕНТ 3: Resolution Lawyer ===
+    # === АГЕНТ 3: Юрист по резолюциям ===
     lawyer = Agent(
-        role="Resolution Source Lawyer",
-        goal="Проанализировать правила резолюции и найти потенциальные риски",
-        backstory="""Ты юрист, специализирующийся на контрактах и правилах. 
-        Твоя задача - внимательно прочитать источник резолюции и найти 
-        любые нюансы, которые могут привести к неожиданному результату.""",
-        backstory_extra=f"""
-        Источник резолюции для этого рынка: {resolution_source}
-        """,
-        tools=[],
-        llm=llm,
+        role="Resolution Lawyer",
+        goal="Проанализировать правила резолюции и найти риски",
+        backstory="""Ты юрист. Твоя задача - найти нюансы в правилах 
+        резолюции, которые могут повлиять на результат.""",
         verbose=True,
-        allow_delegation=False
+        allow_delegation=False,
+        llm="gpt-4o-mini"
     )
     
-    # === АГЕНТ 4: Strategy Lead ===
+    # === АГЕНТ 4: Главный стратег ===
     strategist = Agent(
-        role="Chief Strategy Officer",
-        goal="Синтезировать информацию от всех агентов и выдать финальную рекомендацию",
-        backstory="""Ты главный стратег хедж-фонда. Ты получаешь отчеты от аналитиков, 
-        юристов и сканеров рынка. Твоя задача - рассчитать Expected Value (EV) 
-        и выдать четкую рекомендацию: BUY YES, BUY NO или IGNORE.""",
-        tools=[],
-        llm=llm,
+        role="Strategy Officer",
+        goal="Синтезировать отчеты и дать рекомендацию",
+        backstory="""Ты главный стратег. Собираешь отчеты от всех 
+        агентов и выдаешь финальную рекомендацию: BUY YES, BUY NO или IGNORE.""",
         verbose=True,
-        allow_delegation=True  # Может делегировать задачи другим агентам
+        allow_delegation=True,
+        llm="gpt-4o-mini"
     )
     
     # === ЗАДАЧИ ===
-    
-    # Задача 1: Анализ рынка
     scan_task = Task(
-        description=f"""
-        Проанализируй рынок Polymarket:
+        description=f"""Проанализируй рынок Polymarket:
         Вопрос: {market_question}
         Описание: {market_description}
-        
-        Оцени:
-        1. Насколько ликвиден рынок
-        2. Есть ли признаки манипуляции или необычной активности
-        3. Краткий вывод о текущей цене
-        """,
+        Оцени ликвидность и текущую цену.""",
         expected_output="Краткий анализ рынка (3-4 предложения)",
         agent=scanner
     )
     
-    # Задача 2: Поиск новостей
     news_task = Task(
-        description=f"""
-        Найди 3-5 самых свежих новостей по теме: {market_question}
-        
-        Для каждой новости укажи:
-        - Заголовок и источник
-        - Как она влияет на вероятность события (повышает/понижает)
-        - Насколько надежен источник
-        
-        В конце дай общий вывод: как новости меняют вероятность?
-        """,
+        description=f"""Найди 3-5 свежих новостей по теме: 
+        {market_question}. Для каждой укажи источник и влияние 
+        на вероятность события.""",
         expected_output="Список новостей с анализом и общий вывод",
         agent=news_analyst
     )
     
-    # Задача 3: Анализ правил резолюции
     legal_task = Task(
-        description=f"""
-        Проанализируй источник резолюции: {resolution_source}
-        
-        Найди потенциальные риски:
-        1. Есть ли двусмысленность в формулировках?
-        2. Какие условия должны быть выполнены для "Yes"?
-        3. Есть ли временные ограничения или другие нюансы?
-        
-        Оцени вероятность того, что событие будет засчитано как "True" 
-        строго по правилам, даже если фактически событие произошло.
-        """,
+        description=f"""Проанализируй источник резолюции: 
+        {resolution_source}. Найди риски и двусмысленности 
+        в формулировках.""",
         expected_output="Юридический анализ рисков (3-4 пункта)",
         agent=lawyer
     )
     
-    # Задача 4: Финальная стратегия
     strategy_task = Task(
-        description=f"""
-        Получи отчеты от всех агентов и выдай финальную рекомендацию.
-        
-        Рынок: {market_question}
-        
-        Твой анализ должен включать:
-        1. Краткое резюме от каждого агента (1-2 предложения)
-        2. Твою оценку реальной вероятности события (в %)
-        3. Расчет Expected Value (EV)
-        4. Финальная рекомендация: BUY YES, BUY NO или IGNORE
-        5. Уверенность в рекомендации (низкая/средняя/высокая)
-        6. Ключевые риски
-        
-        Будь конкретен и прагматичен.
-        """,
+        description=f"""Собери отчеты от всех агентов по рынку: 
+        {market_question}. Выдай финальную рекомендацию с оценкой 
+        вероятности, Expected Value и уверенностью.""",
         expected_output="""
-        ## Финальный отчет стратегии
-        
         ### Резюме агентов:
         - Market Scanner: ...
         - News Analyst: ...
         - Resolution Lawyer: ...
         
         ### Оценка вероятности: X%
-        
-        ### Expected Value (EV): ...
-        
         ### Рекомендация: BUY YES / BUY NO / IGNORE
-        
         ### Уверенность: Низкая / Средняя / Высокая
-        
-        ### Ключевые риски:
-        1. ...
-        2. ...
+        ### Ключевые риски: ...
         """,
         agent=strategist
     )
     
-    # === СОЗДАЕМ КОМАНДУ ===
+    # === СОБИРАЕМ КОМАНДУ ===
     crew = Crew(
         agents=[scanner, news_analyst, lawyer, strategist],
         tasks=[scan_task, news_task, legal_task, strategy_task],
-        process=Process.sequential,  # Агенты работают последовательно
-        verbose=True
+        verbose=True,
+        process=Process.sequential
     )
     
     return crew
 
 def run_crew_analysis(market_question, market_description, resolution_source):
-    """
-    Запускает рой агентов и возвращает результат
-    """
+    """Запускает рой и возвращает результат"""
     crew = create_polymarket_crew(market_question, market_description, resolution_source)
     result = crew.kickoff()
     return result
