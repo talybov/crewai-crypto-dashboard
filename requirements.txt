@@ -8,3 +8,7 @@ duckduckgo-search
 pandas
 ta
 pybit
+plotly
+crewai
+langchain
+langchain-openai
